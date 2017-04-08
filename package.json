@@ -1,0 +1,27 @@
+{
+  "name": "sane-net",
+  "version": "0.0.1",
+  "description": "pure JavaScript client for the SANE network protocol (i.e. shared scanners)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moritzmhmk/node-sane-net.git"
+  },
+  "keywords": [
+    "SANE",
+    "scanner",
+    "sane-net"
+  ],
+  "author": "Moritz K.",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/moritzmhmk/node-sane-net/issues"
+  },
+  "homepage": "https://github.com/moritzmhmk/node-sane-net#readme",
+  "dependencies": {
+    "md5": "^2.2.1"
+  }
+}
