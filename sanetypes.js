@@ -6,7 +6,12 @@ module.exports.rpc = {
   'SANE_NET_OPEN': 2,
   'SANE_NET_CLOSE': 3,
   'SANE_NET_GET_OPTION_DESCRIPTORS': 4,
-  'SANE_NET_AUTHORIZE': 9
+  'SANE_NET_CONTROL_OPTION': 5,
+  'SANE_NET_GET_PARAMETERS': 6,
+  'SANE_NET_START': 7,
+  'SANE_NET_CANCEL': 8,
+  'SANE_NET_AUTHORIZE': 9,
+  'SANE_NET_EXIT': 10
 }
 
 module.exports.status = [
