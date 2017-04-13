@@ -10,7 +10,7 @@ class SaneSocket {
     this.responseParsers = []
     this.socket = new net.Socket()
     this.socket.on('data', (data) => {
-      console.debug('Received:', data)
+      console.log('Received:', data)
       this._parse(data)
     })
     this.socket.on('close', () => {
