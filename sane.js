@@ -111,7 +111,7 @@ class ReceivingBuffer {
   sliceFrom (buf) {
     if (!buf || !buf.length) { return buf } // Buffer.fill hangs when zero-length buffer is passed
     this.buffer.fill(buf, this.received)
-    let added = this.size - this.received
+    let added = Math.min(this.size - this.received, buf.length)
     buf = buf.slice(added)
     this.received += added
     return buf
