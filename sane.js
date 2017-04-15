@@ -158,34 +158,6 @@ class ReceivingDummyBuffer {
   }
 }
 
-class ReceivingStringBuffer {
-  constructor () {
-    this.lengthBuffer = new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)
-    this.stringBuffer
-  }
-  get complete () {
-    return this.stringBuffer ? this.stringBuffer.complete : false
-  }
-  get data () {
-    if (!this.stringBuffer) { return undefined }
-    let str = this.stringBuffer.buffer.toString()
-    str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
-    return str
-  }
-  sliceFrom (buf) {
-    if (!this.lengthBuffer.complete) {
-      buf = this.lengthBuffer.sliceFrom(buf)
-      if (this.lengthBuffer.complete) {
-        this.stringBuffer = new ReceivingBuffer(this.lengthBuffer.data)
-      }
-    }
-    if (this.lengthBuffer.complete && !this.stringBuffer.complete) {
-      buf = this.stringBuffer.sliceFrom(buf)
-    }
-    return buf
-  }
-}
-
 class ReceivingPointerBuffer {
   constructor (pointerBuffer) {
     this.isNullBuffer = new ReceivingWordBuffer(ReceivingWordBuffer.type.BOOL)
@@ -266,6 +238,24 @@ class ReceivingArrayBuffer {
         buf = this.buffer[i].sliceFrom(buf)
       }
     }
+    return buf
+  }
+}
+
+class ReceivingStringBuffer {
+  constructor () {
+    this.buffer = new ReceivingArrayBuffer((i) => { return new ReceivingBuffer(1) })
+  }
+  get complete () {
+    return this.buffer.complete
+  }
+  get data () {
+    let str = this.buffer.data.join('')
+    str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
+    return str
+  }
+  sliceFrom (buf) {
+    buf = this.buffer.sliceFrom(buf)
     return buf
   }
 }
