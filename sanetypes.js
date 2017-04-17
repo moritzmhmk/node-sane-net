@@ -39,6 +39,23 @@ module.exports.string = (str) => {
   return buf
 }
 
+let valueType = {
+  'BOOL': 0,
+  'INT': 1,
+  'FIXED': 2,
+  'STRING': 3,
+  'BUTTON': 4,
+  'GROUP': 5
+}
+
+module.exports.word = (value, type) => {
+  var buf = new Buffer(4)
+  if (type === valueType.FIXED) {
+    value = value * (1 << 16)
+  }
+  buf.writeUInt32BE(value)
+  return buf
+}
 module.exports.versionCode = (major, minor, build) => {
   var buf = new Buffer(4)
   buf[0] = major & 0xFF

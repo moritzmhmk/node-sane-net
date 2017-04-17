@@ -47,48 +47,41 @@ class SaneSocket {
     })
   }
   init () {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_INIT)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_INIT)
     var versionCode = sanetypes.versionCode(1, 0, 3)
     var name = sanetypes.string('moritz')
     var buf = Buffer.concat([rpcCode, versionCode, name])
     return this.send(buf, new InitParser())
   }
   getDevices () {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_GET_DEVICES)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_DEVICES)
     console.log(GetDevicesParser)
     return this.send(rpcCode, new GetDevicesParser())
   }
   open (deviceName) {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_OPEN)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_OPEN)
     var buf = Buffer.concat([rpcCode, sanetypes.string(deviceName)])
     return this.send(buf, new OpenParser())
   }
   authorize (resource, username, password, originalParser) {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_AUTHORIZE)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_AUTHORIZE)
     var salt = resource.split('$MD5$')[1]
     var pw = '$MD5$' + md5(salt + password)
     var buf = Buffer.concat([rpcCode, sanetypes.string(resource), sanetypes.string(username), sanetypes.string(pw)])
     return this.send(buf, new AuthorizeParser(originalParser))
   }
   getOptionDescriptors (handle) {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetOptionDescriptorsParser())
   }
   getParameters (handle) {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_GET_PARAMETERS)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_PARAMETERS)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetParametersParser())
   }
   start (handle) {
-    var rpcCode = new Buffer(4)
-    rpcCode.writeUInt32BE(sanetypes.rpc.SANE_NET_START)
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_START)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new StartParser())
   }
