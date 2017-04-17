@@ -58,7 +58,7 @@ class SaneImageTransform extends Transform {
     this.currentChunkLength = 0
   }
   readChunk (data) {
-    console.log('->readChunk')
+    // console.log('->readChunk')
     if (data.length === 0) { return data }
     if (this.currentChunkLength === this.currentChunkConsumed) {
       if (data.length < 4) { console.warn('cant read int 32', data.length) }
@@ -121,11 +121,11 @@ class PNGTransform extends Transform {
     }
     // var output = pako.deflate(readLine(data))
     this._zlib.write(readLine(data), done)
-    console.log('->writePixels', lines)
+    // console.log('->writePixels', lines)
     // this.writePNGChunk('IDAT', output)
   }
   _transform (data, encoding, done) {
-    console.log('->transform')
+    // console.log('->transform')
     if (!this.headerWritten) {
       this.headerWritten = true
       this.push(new Buffer([ 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a ])) // png magic number
