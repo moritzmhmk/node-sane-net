@@ -76,6 +76,17 @@ class SaneSocket {
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetOptionDescriptorsParser())
   }
+  controlOption (handle, option, action, value_type, value_size, value) {
+    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_CONTROL_OPTION)
+    handle = sanetypes.word(handle)
+    option = sanetypes.word(option)
+    action = sanetypes.word(action)
+    value = sanetypes.array(value, (item) => { return sanetypes.word(item, value_type) })
+    value_type = sanetypes.word(value_type)
+    value_size = sanetypes.word(value_size)
+    var buf = Buffer.concat([rpcCode, handle, option, action, value_type, value_size, value])
+    return this.send(buf, new ControlOptionParser())
+  }
   getParameters (handle) {
     var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_PARAMETERS)
     handle = sanetypes.word(handle)
@@ -529,6 +540,40 @@ class GetOptionDescriptorsParser extends EventEmitter {
         ])}
       ]))
     })
+  }
+  get complete () {
+    return this.buffer.complete
+  }
+  get data () {
+    return this.buffer.data
+  }
+  parse (data) {
+    data = this.buffer.sliceFrom(data)
+    if (this.complete) {
+      this.emit('complete', this.data)
+    }
+    return data
+  }
+}
+
+class ControlOptionParser extends EventEmitter {
+  constructor () {
+    super()
+    this.buffer = new SaneStructure([
+      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'info', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'value_type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'value_size', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'value', bufferCreator: (_) => {
+        if (_.value_type === 0) { return new SaneArray(() => { return new SaneWord(SaneWord.type.BOOL) }) }
+        if (_.value_type === 1) { return new SaneArray(() => { return new SaneWord(SaneWord.type.INT) }) }
+        if (_.value_type === 2) { return new SaneArray(() => { return new SaneWord(SaneWord.type.FIXED) }) }
+        if (_.value_type === 3) { return new SaneString() }
+        if (_.value_type === 4) { return new SaneArray(() => { return new SaneWord() }) }
+        if (_.value_type === 5) { return new SaneArray(() => { return new SaneWord() }) }
+      }},
+      {name: 'resource', bufferCreator: () => new SaneString()}
+    ])
   }
   get complete () {
     return this.buffer.complete

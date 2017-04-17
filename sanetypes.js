@@ -56,6 +56,14 @@ module.exports.word = (value, type) => {
   buf.writeUInt32BE(value)
   return buf
 }
+
+module.exports.array = (array, itemHandler) => {
+  var list = [new Buffer(4)]
+  list[0].writeUInt32BE(array.length)
+  array.forEach((item) => { list.push(itemHandler(item)) })
+  return Buffer.concat(list)
+}
+
 module.exports.versionCode = (major, minor, build) => {
   var buf = new Buffer(4)
   buf[0] = major & 0xFF
