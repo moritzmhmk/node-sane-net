@@ -72,16 +72,19 @@ class SaneSocket {
   }
   getOptionDescriptors (handle) {
     var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
+    handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetOptionDescriptorsParser())
   }
   getParameters (handle) {
     var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_PARAMETERS)
+    handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetParametersParser())
   }
   start (handle) {
     var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_START)
+    handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new StartParser())
   }
@@ -89,17 +92,30 @@ class SaneSocket {
 
 module.exports.Socket = SaneSocket
 
-class ReceivingBuffer {
+/**
+* A byte is encoded as an 8 bit value.
+* Since the transport protocol is assumed to be byte-orientd, the bit order is irrelevant.
+*
+* @param size number of bytes - defaults to one
+*/
+class SaneBytes {
   constructor (size) {
-    this.size = size
+    this.size = size !== undefined ? size : 1
     this.received = 0
     this.buffer = new Buffer(size)
   }
   get complete () {
     return this.received === this.size
   }
+  get buf () {
+    return this.buffer
+  }
   get data () {
     return this.buffer
+  }
+  set data (data) {
+    this.buffer.fill(data)
+    this.received = this.size
   }
   sliceFrom (buf) {
     if (!buf || !buf.length) { return buf } // Buffer.fill hangs when zero-length buffer is passed
@@ -111,8 +127,14 @@ class ReceivingBuffer {
   }
 }
 
-class ReceivingWordBuffer {
-  static get type () {
+/**
+* A word is encoded as 4 bytes (32 bits).
+* The bytes are ordered from most-significant to least-significant byte (big-endian byte-order).
+*
+* @param type type of value this word encodes see TODO
+*/
+class SaneWord {
+  static get type () { // TODO move to some enum collection
     return {
       'BOOL': 0,
       'INT': 1,
@@ -121,17 +143,26 @@ class ReceivingWordBuffer {
   }
   constructor (type) {
     this.type = type
-    this.buffer = new ReceivingBuffer(4)
+    this.buffer = new SaneBytes(4)
   }
   get complete () {
     return this.buffer.complete
   }
+  get buf () {
+    return Buffer.concat([this.buffer.buf])
+  }
   get data () {
     let i = this.buffer.data.readInt32BE() // TODO signed or unsinged?
-    if (this.type === ReceivingWordBuffer.type.BOOL) { return i }
-    if (this.type === ReceivingWordBuffer.type.INT) { return i }
-    if (this.type === ReceivingWordBuffer.type.FIXED) { return i / (1 << 16) }
+    if (this.type === SaneWord.type.BOOL) { return i }
+    if (this.type === SaneWord.type.INT) { return i }
+    if (this.type === SaneWord.type.FIXED) { return i / (1 << 16) }
     return i
+  }
+  set data (i) {
+    if (this.type === SaneWord.type.FIXED) { i = i * (1 << 16) }
+    let buf = new Buffer(4)
+    buf.writeInt32BE(i) // TODO signed or unsinged?
+    this.buffer.data = buf
   }
   sliceFrom (buf) {
     buf = this.buffer.sliceFrom(buf)
@@ -139,21 +170,45 @@ class ReceivingWordBuffer {
   }
 }
 
-class ReceivingDummyBuffer {
+/**
+* A character is currently encoded as an 8-bit ISO LATIN-1 value.
+* NOTE: An extension to support wider character sets (16 or 32 bits) is planned for the future,
+* but not supported at this point.
+*/
+class SaneChar {
+  constructor () {
+    this.buffer = new SaneBytes(1)
+  }
   get complete () {
-    return true
+    return this.buffer.complete
+  }
+  get buf () {
+    return this.buffer.buf
   }
   get data () {
-    return null
+    return this.buffer.data
+  }
+  set data (c) {
+    let buf = new Buffer(c)
+    this.buffer.data = buf
   }
   sliceFrom (buf) {
+    buf = this.buffer.sliceFrom(buf)
     return buf
   }
 }
 
-class ReceivingPointerBuffer {
+/**
+* A SanePointer is encoded by a word that indicates whether the pointer is a NULL-pointer which is
+* then (in the case of a non-NULL pointer) followed by the value that the pointer points to.
+* The word is 0 in case of a non-NULL pointer (sic!).
+* In the case of a NULL pointer, no bytes are encoded for the pointer value.
+*
+* @param pointerBuffer the buffer to store the value of the pointer
+*/
+class SanePointer {
   constructor (pointerBuffer) {
-    this.isNullBuffer = new ReceivingWordBuffer(ReceivingWordBuffer.type.BOOL)
+    this.isNullBuffer = new SaneWord(SaneWord.type.BOOL)
     this.pointerBuffer = pointerBuffer
   }
   get complete () {
@@ -162,8 +217,16 @@ class ReceivingPointerBuffer {
   get isNull () {
     return this.isNullBuffer.complete && this.isNullBuffer.data
   }
+  get buf () {
+    if (this.isNull) { return this.isNullBuffer.buf }
+    return Buffer.concat([this.isNullBuffer.buf, this.pointerBuffer.buf])
+  }
   get data () {
     return this.isNull ? null : this.pointerBuffer.data
+  }
+  set data (data) {
+    this.isNullBuffer.data = data === null
+    this.pointerBuffer.data = data
   }
   sliceFrom (buf) {
     buf = this.isNullBuffer.sliceFrom(buf)
@@ -174,40 +237,68 @@ class ReceivingPointerBuffer {
   }
 }
 
-class ReceivingStructBuffer {
+/**
+* A structure is encoded by simply encoding the structure members in the order in which they appear.
+*
+* @param structDefinition definition of the struct in the format [ {name: 'name', bufferCreator: () => new SaneBuffer()}, ...] // TODO
+*/
+class SaneStructure {
   constructor (structDefinition) {
     this.structDefinition = structDefinition
   }
   get complete () {
-    return !this.structDefinition.find((def) => { return !def.buffer.complete })
+    return !this.structDefinition.find((def) => { return !def.buffer || !def.buffer.complete })
+  }
+  get buf () {
+    return Buffer.concat(this.structDefinition.map((def) => { return def.buffer && def.buffer.buf }))
   }
   get data () {
     let data = {}
     this.structDefinition.forEach((def) => {
-      if (def.buffer.complete) {
+      if (def.buffer && def.buffer.complete) {
         data[def.name] = def.buffer.data
       }
     })
     return data
   }
+  set data (data) {
+    console.log(data)
+    this.structDefinition.forEach((def) => {
+      def.buffer = def.bufferCreator(data)
+      def.buffer.data = data[def.name]
+    })
+  }
   sliceFrom (buf) {
     for (let i = 0; i < this.structDefinition.length; i++) {
+      if (!this.structDefinition[i].buffer) {
+        this.structDefinition[i].buffer = this.structDefinition[i].bufferCreator(this.data)
+      }
       if (!this.structDefinition[i].buffer.complete) {
         buf = this.structDefinition[i].buffer.sliceFrom(buf)
       }
-      if (!buf.length) { break }
+      if (!this.structDefinition[i].buffer.complete) {
+        break
+      }
     }
     return buf
   }
 }
 
-class ReceivingArrayBuffer {
+/**
+* An array is encoded by a word that indicates the length of the array
+* followed by the values of the elements in the array.
+* The length may be zero in which case no bytes are encoded for the element values.
+*
+* @param itemBufferCreator function that returns a new SaneBuffer. Called for every array element.
+*/
+class SaneArray {
   constructor (itemBufferCreator) {
-    this.lengthBuffer = new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)
+    this.lengthBuffer = new SaneWord(SaneWord.type.INT)
+    this.buffer = []
     this.itemBufferCreator = itemBufferCreator
   }
   get complete () {
-    if (!this.buffer) { return false }
+    if (!this.lengthBuffer.complete) { return false }
     let complete = true
     for (let i = 0; i < this.buffer.length; i++) {
       complete = this.buffer[i] && this.buffer[i].complete
@@ -215,122 +306,63 @@ class ReceivingArrayBuffer {
     }
     return complete
   }
+  get buf () {
+    let _ = this.buffer.map((item) => { return item.buf })
+    _.unshift(this.lengthBuffer.buf)
+    return Buffer.concat(_)
+  }
   get data () {
-    return this.buffer ? this.buffer.map((item) => { return item ? item.data : undefined }) : []
+    return this.buffer.map((item) => { return item ? item.data : undefined })
+  }
+  set data (data) {
+    this.lengthBuffer.data = data.length
+    this.buffer = new Array(data.length)
+    for (let i = 0; i < data.length; i++) {
+      this.buffer[i] = this.itemBufferCreator(i)
+      this.buffer[i].data = data[i]
+    }
   }
   sliceFrom (buf) {
     if (!this.lengthBuffer.complete) {
       buf = this.lengthBuffer.sliceFrom(buf)
-      if (this.lengthBuffer.complete) { this.buffer = new Array(this.lengthBuffer.data) }
+      if (this.lengthBuffer.complete) {
+        this.buffer = new Array(this.lengthBuffer.data).fill(0) // TODO why is fill(0) required
+        this.buffer = this.buffer.map((_, i) => { return this.itemBufferCreator(i) })
+      }
     }
     for (let i = 0; i < this.buffer.length; i++) {
-      if (!this.buffer[i]) {
-        this.buffer[i] = this.itemBufferCreator(i)
-      }
-      if (!this.buffer[i].complete) {
-        buf = this.buffer[i].sliceFrom(buf)
-      }
+      if (!this.buffer[i].complete) { buf = this.buffer[i].sliceFrom(buf) }
     }
     return buf
   }
 }
 
-class ReceivingStringBuffer {
+/**
+* A string pointer is encoded as a SaneArray of SaneChar.
+* The trailing NUL byte is considered part of the array.
+* A NULL pointer is encoded as a zero-length array.
+*/
+class SaneString {
   constructor () {
-    this.buffer = new ReceivingArrayBuffer((i) => { return new ReceivingBuffer(1) })
+    this.buffer = new SaneArray((i) => { return new SaneChar() })
   }
   get complete () {
     return this.buffer.complete
+  }
+  get buf () {
+    return this.buffer.buf
   }
   get data () {
     let str = this.buffer.data.join('')
     str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
     return str
   }
+  set data (str) {
+    str = str.slice(-1) === '\0' ? str : str + '\0'
+    this.buffer.data = str.split('')
+  }
   sliceFrom (buf) {
     buf = this.buffer.sliceFrom(buf)
-    return buf
-  }
-}
-
-class ReceivingConstraintBuffer {
-  constructor (rangeValueType) {
-    this.rangeValueType = rangeValueType
-    this.type = new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)
-  }
-  get complete () {
-    if (!this.type.complete) { return false }
-    if (!this.value.complete) { return false }
-    return true
-  }
-  get data () {
-    return {
-      type: this.type.data,
-      value: this.value ? this.value.data : undefined
-    }
-  }
-  sliceFrom (buf) {
-    if (!this.type.complete) {
-      buf = this.type.sliceFrom(buf)
-      if (this.type.complete) {
-        if (this.type.data === 0) { // NONE
-          this.value = new ReceivingDummyBuffer()
-        }
-        if (this.type.data === 1) {// RANGE
-          this.value = new ReceivingPointerBuffer(new ReceivingStructBuffer([
-            {name: 'min', buffer: new ReceivingWordBuffer(this.rangeValueType)},
-            {name: 'max', buffer: new ReceivingWordBuffer(this.rangeValueType)},
-            {name: 'quantization', buffer: new ReceivingWordBuffer(this.rangeValueType)}
-          ]))
-        }
-        if (this.type.data === 2) {// WORD_LIST
-          this.value = new ReceivingArrayBuffer((index) => { return new ReceivingWordBuffer(ReceivingWordBuffer.type.INT) })
-        }
-        if (this.type.data === 3) {// STRING_LIST
-          this.value = new ReceivingArrayBuffer((index) => { return new ReceivingStringBuffer() })
-        }
-      }
-    }
-
-    if (this.type.complete) {
-      buf = this.value.sliceFrom(buf)
-    }
-
-    return buf
-  }
-}
-
-class ReceivingOptionDescriptorBuffer {
-  constructor () {
-    this.structBuffer = new ReceivingStructBuffer([
-      {name: 'name', buffer: new ReceivingStringBuffer()},
-      {name: 'title', buffer: new ReceivingStringBuffer()},
-      {name: 'description', buffer: new ReceivingStringBuffer()},
-      {name: 'type', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'units', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'size', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'cap', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)}
-    ])
-    this.constraintBuffer = new ReceivingConstraintBuffer()
-  }
-  get complete () {
-    return this.structBuffer.complete && this.constraintBuffer && this.constraintBuffer.complete
-  }
-  get data () {
-    let data = Object.assign({}, this.structBuffer.data)
-    data.constraint = this.constraintBuffer.data
-    return data
-  }
-  sliceFrom (buf) {
-    if (!this.structBuffer.complete) {
-      buf = this.structBuffer.sliceFrom(buf)
-      if (this.structBuffer.complete) {
-        this.constraintBuffer = new ReceivingConstraintBuffer(this.structBuffer.data.type)
-      }
-    }
-    if (this.structBuffer.complete) {
-      buf = this.constraintBuffer.sliceFrom(buf)
-    }
     return buf
   }
 }
@@ -355,9 +387,9 @@ class FakeParser extends EventEmitter {
 class InitParser extends EventEmitter {
   constructor () {
     super()
-    this.buffer = new ReceivingStructBuffer([
-      {name: 'status', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'version_code', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)}
+    this.buffer = new SaneStructure([
+      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'version_code', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
     ])
   }
   get complete () {
@@ -377,15 +409,15 @@ class GetDevicesParser extends EventEmitter {
   constructor () {
     super()
     this.buffer = {}
-    this.buffer.devices = new ReceivingArrayBuffer((index) => {
-      return new ReceivingPointerBuffer(new ReceivingStructBuffer([
-        {name: 'name', buffer: new ReceivingStringBuffer()},
-        {name: 'vendor', buffer: new ReceivingStringBuffer()},
-        {name: 'model', buffer: new ReceivingStringBuffer()},
-        {name: 'type', buffer: new ReceivingStringBuffer()}
+    this.buffer.devices = new SaneArray((index) => {
+      return new SanePointer(new SaneStructure([
+        {name: 'name', bufferCreator: () => new SaneString()},
+        {name: 'vendor', bufferCreator: () => new SaneString()},
+        {name: 'model', bufferCreator: () => new SaneString()},
+        {name: 'type', bufferCreator: () => new SaneString()}
       ]))
     })
-    this.buffer.status = new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)
+    this.buffer.status = new SaneWord(SaneWord.type.INT)
   }
   get complete () {
     return this.buffer.status.complete && this.buffer.devices.complete
@@ -414,10 +446,10 @@ class OpenParser extends EventEmitter {
     this._resetBuffer()
   }
   _resetBuffer () {
-    this.buffer = new ReceivingStructBuffer([
-      {name: 'status', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'handle', buffer: new ReceivingBuffer(4)},
-      {name: 'resource', buffer: new ReceivingStringBuffer()}
+    this.buffer = new SaneStructure([
+      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'handle', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'resource', bufferCreator: () => new SaneString()}
     ])
   }
   get complete () {
@@ -445,7 +477,7 @@ class OpenParser extends EventEmitter {
 class AuthorizeParser extends EventEmitter {
   constructor (originalParser) {
     super()
-    this.status = new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)
+    this.status = new SaneWord(SaneWord.type.INT)
     this.originalParser = originalParser
   }
   get complete () {
@@ -465,8 +497,37 @@ class AuthorizeParser extends EventEmitter {
 class GetOptionDescriptorsParser extends EventEmitter {
   constructor () {
     super()
-    this.buffer = new ReceivingArrayBuffer((index) => {
-      return new ReceivingPointerBuffer(new ReceivingOptionDescriptorBuffer())
+    this.buffer = new SaneArray((index) => {
+      return new SanePointer(new SaneStructure([
+        {name: 'name', bufferCreator: () => new SaneString()},
+        {name: 'title', bufferCreator: () => new SaneString()},
+        {name: 'description', bufferCreator: () => new SaneString()},
+        {name: 'type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+        {name: 'units', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+        {name: 'size', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+        {name: 'cap', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+        {name: 'constraint', bufferCreator: (optionDescriptor) => new SaneStructure([
+          {name: 'type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+          {name: 'value', bufferCreator: (constraint) => {
+            if (constraint.type === 0) { // NONE
+              return new SaneBytes(0)
+            }
+            if (constraint.type === 1) {// RANGE
+              return new SanePointer(new SaneStructure([
+                {name: 'min', bufferCreator: () => new SaneWord(optionDescriptor.type)},
+                {name: 'max', bufferCreator: () => new SaneWord(optionDescriptor.type)},
+                {name: 'quantization', bufferCreator: () => new SaneWord(optionDescriptor.type)}
+              ]))
+            }
+            if (constraint.type === 2) {// WORD_LIST
+              return new SaneArray((index) => { return new SaneWord(optionDescriptor.type) })
+            }
+            if (constraint.type === 3) {// STRING_LIST
+              return new SaneArray((index) => { return new SaneString() })
+            }
+          }}
+        ])}
+      ]))
     })
   }
   get complete () {
@@ -487,14 +548,14 @@ class GetOptionDescriptorsParser extends EventEmitter {
 class GetParametersParser extends EventEmitter {
   constructor () {
     super()
-    this.status = new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)
-    this.buffer = new ReceivingStructBuffer([
-      {name: 'format', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'last_frame', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.BOOL)},
-      {name: 'bytes_per_line', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'pixels_per_line', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'lines', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'depth', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)}
+    this.status = new SaneWord(SaneWord.type.INT)
+    this.buffer = new SaneStructure([
+      {name: 'format', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'last_frame', bufferCreator: () => new SaneWord(SaneWord.type.BOOL)},
+      {name: 'bytes_per_line', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'pixels_per_line', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'lines', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'depth', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
     ])
   }
   get complete () {
@@ -519,11 +580,11 @@ class StartParser extends EventEmitter {
     this._resetBuffer()
   }
   _resetBuffer () {
-    this.buffer = new ReceivingStructBuffer([
-      {name: 'status', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'port', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'byte_order', buffer: new ReceivingWordBuffer(ReceivingWordBuffer.type.INT)},
-      {name: 'resource', buffer: new ReceivingStringBuffer()}
+    this.buffer = new SaneStructure([
+      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'port', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'byte_order', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
+      {name: 'resource', bufferCreator: () => new SaneString()}
     ])
   }
   get complete () {
