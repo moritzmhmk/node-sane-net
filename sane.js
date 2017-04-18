@@ -104,30 +104,35 @@ class SaneSocket {
 module.exports.Socket = SaneSocket
 
 /**
+* TODO
+*/
+class SaneBuffer {
+  constructor () {
+    if (new.target === SaneBuffer) {
+      throw new TypeError('Cannot construct SaneBuffer instances directly')
+    }
+  }
+  get complete () { return this.buffer.complete }
+  static bufferFor (data) { return data }
+  get data () { return this.buffer.data }
+  sliceFrom (buf) { return this.buffer.sliceFrom(buf) }
+}
+
+/**
 * A byte is encoded as an 8 bit value.
 * Since the transport protocol is assumed to be byte-orientd, the bit order is irrelevant.
 *
 * @param size number of bytes - defaults to one
 */
-class SaneBytes {
+class SaneBytes extends SaneBuffer {
   constructor (size) {
+    super()
     this.size = size !== undefined ? size : 1
     this.received = 0
     this.buffer = new Buffer(size)
   }
-  get complete () {
-    return this.received === this.size
-  }
-  get buf () {
-    return this.buffer
-  }
-  get data () {
-    return this.buffer
-  }
-  set data (data) {
-    this.buffer.fill(data)
-    this.received = this.size
-  }
+  get complete () { return this.received === this.size }
+  get data () { return this.buffer }
   sliceFrom (buf) {
     if (!buf || !buf.length) { return buf } // Buffer.fill hangs when zero-length buffer is passed
     this.buffer.fill(buf, this.received)
@@ -144,7 +149,7 @@ class SaneBytes {
 *
 * @param type type of value this word encodes see TODO
 */
-class SaneWord {
+class SaneWord extends SaneBuffer {
   static get type () { // TODO move to some enum collection
     return {
       'BOOL': 0,
@@ -153,14 +158,18 @@ class SaneWord {
     }
   }
   constructor (type) {
+    super()
     this.type = type
     this.buffer = new SaneBytes(4)
   }
-  get complete () {
-    return this.buffer.complete
-  }
-  get buf () {
-    return Buffer.concat([this.buffer.buf])
+  static bufferFor (data) {
+    if (typeof data !== 'number') { throw new Error('data must be a number') }
+    var buf = new Buffer(4)
+    if (data !== (data | 0)) { // float
+      data = data * (1 << 16)
+    }
+    buf.writeUInt32BE(data)
+    return buf
   }
   get data () {
     let i = this.buffer.data.readInt32BE() // TODO signed or unsinged?
@@ -169,16 +178,6 @@ class SaneWord {
     if (this.type === SaneWord.type.FIXED) { return i / (1 << 16) }
     return i
   }
-  set data (i) {
-    if (this.type === SaneWord.type.FIXED) { i = i * (1 << 16) }
-    let buf = new Buffer(4)
-    buf.writeInt32BE(i) // TODO signed or unsinged?
-    this.buffer.data = buf
-  }
-  sliceFrom (buf) {
-    buf = this.buffer.sliceFrom(buf)
-    return buf
-  }
 }
 
 /**
@@ -186,26 +185,13 @@ class SaneWord {
 * NOTE: An extension to support wider character sets (16 or 32 bits) is planned for the future,
 * but not supported at this point.
 */
-class SaneChar {
+class SaneChar extends SaneBuffer {
   constructor () {
+    super()
     this.buffer = new SaneBytes(1)
   }
-  get complete () {
-    return this.buffer.complete
-  }
-  get buf () {
-    return this.buffer.buf
-  }
-  get data () {
-    return this.buffer.data
-  }
-  set data (c) {
-    let buf = new Buffer(c)
-    this.buffer.data = buf
-  }
-  sliceFrom (buf) {
-    buf = this.buffer.sliceFrom(buf)
-    return buf
+  static bufferFor (data) {
+    return new Buffer(data)
   }
 }
 
@@ -217,8 +203,9 @@ class SaneChar {
 *
 * @param pointerBuffer the buffer to store the value of the pointer
 */
-class SanePointer {
+class SanePointer extends SaneBuffer {
   constructor (pointerBuffer) {
+    super()
     this.isNullBuffer = new SaneWord(SaneWord.type.BOOL)
     this.pointerBuffer = pointerBuffer
   }
@@ -228,16 +215,12 @@ class SanePointer {
   get isNull () {
     return this.isNullBuffer.complete && this.isNullBuffer.data
   }
-  get buf () {
-    if (this.isNull) { return this.isNullBuffer.buf }
-    return Buffer.concat([this.isNullBuffer.buf, this.pointerBuffer.buf])
+  static bufferFor (data) {
+    if (data === null) { return SaneWord.bufferFor(1) }
+    return Buffer.concat([SaneWord.bufferFor(0), data])
   }
   get data () {
     return this.isNull ? null : this.pointerBuffer.data
-  }
-  set data (data) {
-    this.isNullBuffer.data = data === null
-    this.pointerBuffer.data = data
   }
   sliceFrom (buf) {
     buf = this.isNullBuffer.sliceFrom(buf)
@@ -253,15 +236,13 @@ class SanePointer {
 *
 * @param structDefinition definition of the struct in the format [ {name: 'name', bufferCreator: () => new SaneBuffer()}, ...] // TODO
 */
-class SaneStructure {
+class SaneStructure extends SaneBuffer {
   constructor (structDefinition) {
+    super()
     this.structDefinition = structDefinition
   }
   get complete () {
     return !this.structDefinition.find((def) => { return !def.buffer || !def.buffer.complete })
-  }
-  get buf () {
-    return Buffer.concat(this.structDefinition.map((def) => { return def.buffer && def.buffer.buf }))
   }
   get data () {
     let data = {}
@@ -271,13 +252,6 @@ class SaneStructure {
       }
     })
     return data
-  }
-  set data (data) {
-    console.log(data)
-    this.structDefinition.forEach((def) => {
-      def.buffer = def.bufferCreator(data)
-      def.buffer.data = data[def.name]
-    })
   }
   sliceFrom (buf) {
     for (let i = 0; i < this.structDefinition.length; i++) {
@@ -302,8 +276,9 @@ class SaneStructure {
 *
 * @param itemBufferCreator function that returns a new SaneBuffer. Called for every array element.
 */
-class SaneArray {
+class SaneArray extends SaneBuffer {
   constructor (itemBufferCreator) {
+    super()
     this.lengthBuffer = new SaneWord(SaneWord.type.INT)
     this.buffer = []
     this.itemBufferCreator = itemBufferCreator
@@ -317,21 +292,12 @@ class SaneArray {
     }
     return complete
   }
-  get buf () {
-    let _ = this.buffer.map((item) => { return item.buf })
-    _.unshift(this.lengthBuffer.buf)
-    return Buffer.concat(_)
+  static bufferFor (data) {
+    data.unshift(SaneWord.bufferFor(data.length))
+    return Buffer.concat(data)
   }
   get data () {
     return this.buffer.map((item) => { return item ? item.data : undefined })
-  }
-  set data (data) {
-    this.lengthBuffer.data = data.length
-    this.buffer = new Array(data.length)
-    for (let i = 0; i < data.length; i++) {
-      this.buffer[i] = this.itemBufferCreator(i)
-      this.buffer[i].data = data[i]
-    }
   }
   sliceFrom (buf) {
     if (!this.lengthBuffer.complete) {
@@ -353,129 +319,40 @@ class SaneArray {
 * The trailing NUL byte is considered part of the array.
 * A NULL pointer is encoded as a zero-length array.
 */
-class SaneString {
+class SaneString extends SaneBuffer {
   constructor () {
+    super()
     this.buffer = new SaneArray((i) => { return new SaneChar() })
   }
-  get complete () {
-    return this.buffer.complete
-  }
-  get buf () {
-    return this.buffer.buf
+  static bufferFor (str) {
+    str = str.slice(-1) === '\0' ? str : str + '\0'
+    return SaneArray.bufferFor(str.split('').map((c) => SaneChar.bufferFor(c)))
   }
   get data () {
     let str = this.buffer.data.join('')
     str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
     return str
   }
-  set data (str) {
-    str = str.slice(-1) === '\0' ? str : str + '\0'
-    this.buffer.data = str.split('')
-  }
-  sliceFrom (buf) {
-    buf = this.buffer.sliceFrom(buf)
-    return buf
-  }
 }
 
-class FakeParser extends EventEmitter {
+class Parser extends EventEmitter {
   constructor () {
     super()
+    this.status = new SaneBytes(0)
+    this.buffer = new SaneBytes(0)
+    this.resource = new SaneBytes(0)
   }
-  get data () {
-    return this.buffer
-  }
-  get complete () {
-    return this.data !== undefined
-  }
+  get data () { return this.buffer.data }
+  get complete () { return this.buffer.complete }
   parse (data) {
-    this.buffer = data
-    if (this.complete) { this.emit('complete', this.data) }
-    return new Buffer(0)
-  }
-}
-
-class InitParser extends EventEmitter {
-  constructor () {
-    super()
-    this.buffer = new SaneStructure([
-      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'version_code', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
-    ])
-  }
-  get complete () {
-    return this.buffer.complete
-  }
-  get data () {
-    return this.buffer.data
-  }
-  parse (data) {
+    data = this.status.sliceFrom(data)
     data = this.buffer.sliceFrom(data)
-    if (this.complete) { this.emit('complete', this.data) }
-    return data
-  }
-}
-
-class GetDevicesParser extends EventEmitter {
-  constructor () {
-    super()
-    this.buffer = {}
-    this.buffer.devices = new SaneArray((index) => {
-      return new SanePointer(new SaneStructure([
-        {name: 'name', bufferCreator: () => new SaneString()},
-        {name: 'vendor', bufferCreator: () => new SaneString()},
-        {name: 'model', bufferCreator: () => new SaneString()},
-        {name: 'type', bufferCreator: () => new SaneString()}
-      ]))
-    })
-    this.buffer.status = new SaneWord(SaneWord.type.INT)
-  }
-  get complete () {
-    return this.buffer.status.complete && this.buffer.devices.complete
-  }
-  get data () {
-    return {
-      devices: this.buffer.devices.data,
-      status: this.buffer.status.data
-    }
-  }
-  parse (data) {
-    if (!this.buffer.status.complete) {
-      data = this.buffer.status.sliceFrom(data)
-    }
-    if (!this.buffer.devices.complete) {
-      data = this.buffer.devices.sliceFrom(data)
-    }
-    if (this.complete) { this.emit('complete', this.data) }
-    return data
-  }
-}
-
-class OpenParser extends EventEmitter {
-  constructor () {
-    super()
-    this._resetBuffer()
-  }
-  _resetBuffer () {
-    this.buffer = new SaneStructure([
-      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'handle', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'resource', bufferCreator: () => new SaneString()}
-    ])
-  }
-  get complete () {
-    return this.buffer.complete
-  }
-  get data () {
-    return this.buffer.data
-  }
-  parse (data) {
-    data = this.buffer.sliceFrom(data)
+    data = this.resource.sliceFrom(data)
     if (this.complete) {
-      if (this.data.resource.length) {
-        console.log('authorization required', this.data.resource.length, this.data.resource)
-        let resource = this.data.resource
-        this._resetBuffer()
+      let resource = this.resource.data
+      if (resource.length) {
+        console.log('authorization required:', resource)
+        this._resetBuffer() // TODO
         this.emit('authorize', resource)
       } else {
         this.emit('complete', this.data)
@@ -485,18 +362,63 @@ class OpenParser extends EventEmitter {
   }
 }
 
-class AuthorizeParser extends EventEmitter {
+class InitParser extends Parser {
+  constructor () {
+    super()
+    this.status = new SaneWord(SaneWord.type.INT)
+    this.buffer = new SaneStructure([
+      {name: 'version_code', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
+    ])
+  }
+}
+
+class GetDevicesParser extends Parser {
+  constructor () {
+    super()
+    this.status = new SaneWord(SaneWord.type.INT)
+    this.buffer = new SaneArray((index) => {
+      return new SanePointer(new SaneStructure([
+        {name: 'name', bufferCreator: () => new SaneString()},
+        {name: 'vendor', bufferCreator: () => new SaneString()},
+        {name: 'model', bufferCreator: () => new SaneString()},
+        {name: 'type', bufferCreator: () => new SaneString()}
+      ]))
+    })
+  }
+  parse (data) {
+    if (!this.status.complete) {
+      data = this.status.sliceFrom(data)
+    }
+    if (!this.buffer.complete) {
+      data = this.buffer.sliceFrom(data)
+    }
+    if (this.complete) { this.emit('complete', this.data) }
+    return data
+  }
+}
+
+class OpenParser extends Parser {
+  constructor () {
+    super()
+    this._resetBuffer()
+  }
+  _resetBuffer () {
+    this.status = new SaneWord(SaneWord.type.INT)
+    this.buffer = new SaneStructure([
+      {name: 'handle', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
+    ])
+    this.resource = new SaneString()
+  }
+}
+
+class AuthorizeParser extends Parser {
   constructor (originalParser) {
     super()
     this.status = new SaneWord(SaneWord.type.INT)
     this.originalParser = originalParser
   }
-  get complete () {
-    return this.originalParser.complete
-  }
-  get data () {
-    return this.originalParser.data
-  }
+  get complete () { return this.originalParser.complete }
+  get data () { return this.originalParser.data }
   parse (data) {
     data = this.status.sliceFrom(data)
     data = this.originalParser.parse(data)
@@ -505,9 +427,10 @@ class AuthorizeParser extends EventEmitter {
   }
 }
 
-class GetOptionDescriptorsParser extends EventEmitter {
+class GetOptionDescriptorsParser extends Parser {
   constructor () {
     super()
+    this.status = new SaneBytes(0)
     this.buffer = new SaneArray((index) => {
       return new SanePointer(new SaneStructure([
         {name: 'name', bufferCreator: () => new SaneString()},
@@ -541,26 +464,13 @@ class GetOptionDescriptorsParser extends EventEmitter {
       ]))
     })
   }
-  get complete () {
-    return this.buffer.complete
-  }
-  get data () {
-    return this.buffer.data
-  }
-  parse (data) {
-    data = this.buffer.sliceFrom(data)
-    if (this.complete) {
-      this.emit('complete', this.data)
-    }
-    return data
-  }
 }
 
-class ControlOptionParser extends EventEmitter {
+class ControlOptionParser extends Parser {
   constructor () {
     super()
+    this.status = new SaneWord(SaneWord.type.INT)
     this.buffer = new SaneStructure([
-      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
       {name: 'info', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
       {name: 'value_type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
       {name: 'value_size', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
@@ -575,22 +485,9 @@ class ControlOptionParser extends EventEmitter {
       {name: 'resource', bufferCreator: () => new SaneString()}
     ])
   }
-  get complete () {
-    return this.buffer.complete
-  }
-  get data () {
-    return this.buffer.data
-  }
-  parse (data) {
-    data = this.buffer.sliceFrom(data)
-    if (this.complete) {
-      this.emit('complete', this.data)
-    }
-    return data
-  }
 }
 
-class GetParametersParser extends EventEmitter {
+class GetParametersParser extends Parser {
   constructor () {
     super()
     this.status = new SaneWord(SaneWord.type.INT)
@@ -603,34 +500,20 @@ class GetParametersParser extends EventEmitter {
       {name: 'depth', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
     ])
   }
-  get complete () {
-    return this.buffer.complete
-  }
-  get data () {
-    return {'status': this.status.data, 'parameters': this.buffer.data}
-  }
-  parse (data) {
-    data = this.status.sliceFrom(data)
-    data = this.buffer.sliceFrom(data)
-    if (this.complete) {
-      this.emit('complete', this.data)
-    }
-    return data
-  }
 }
 
-class StartParser extends EventEmitter {
+class StartParser extends Parser {
   constructor () {
     super()
     this._resetBuffer()
   }
   _resetBuffer () {
+    this.status = new SaneWord(SaneWord.type.INT)
     this.buffer = new SaneStructure([
-      {name: 'status', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
       {name: 'port', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'byte_order', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'resource', bufferCreator: () => new SaneString()}
+      {name: 'byte_order', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
     ])
+    this.resource = new SaneString()
   }
   get complete () {
     return this.buffer.complete
@@ -639,11 +522,13 @@ class StartParser extends EventEmitter {
     return this.buffer.data
   }
   parse (data) {
+    data = this.status.sliceFrom(data)
     data = this.buffer.sliceFrom(data)
+    data = this.resource.sliceFrom(data)
     if (this.complete) {
-      if (this.data.resource.length) {
-        console.log('authorization required', this.data.resource.length, this.data.resource)
-        let resource = this.data.resource
+      if (this.resource.data.length) {
+        console.log('authorization required', this.resource.data.length, this.resource.data)
+        let resource = this.resource.data
         this._resetBuffer()
         this.emit('authorize', resource)
       } else {

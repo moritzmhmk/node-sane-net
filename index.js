@@ -17,7 +17,7 @@ saneClient.connect(6566, '127.0.0.1')
 })
 .then((data) => {
   console.log('get devices response', data)
-  return saneClient.open(data.devices[0].name)
+  return saneClient.open(data[0].name)
 })
 .then((data) => {
   console.log('open device response', data)
@@ -40,8 +40,8 @@ saneClient.connect(6566, '127.0.0.1')
 })
 .then((data) => {
   console.log('get parameters response', data)
-  width = data.parameters.pixels_per_line
-  height = data.parameters.lines
+  width = data.pixels_per_line
+  height = data.lines
   var handle = new Buffer([0, 0, 0, 0]) // TODO use actual handle
   return saneClient.start(handle)
 })
