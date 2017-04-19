@@ -243,36 +243,31 @@ class SanePointer extends SaneBuffer {
 * @param structDefinition definition of the struct in the format [ {name: 'name', bufferCreator: () => new SaneBuffer()}, ...] // TODO
 */
 class SaneStructure extends SaneBuffer {
-  constructor (structDefinition) {
+  constructor (definitionMap) {
     super()
-    this.structDefinition = structDefinition
+    this.definitionMap = definitionMap
+    this.bufferMap = new Map()
   }
   reset () {
-    this.structDefinition.forEach((def) => { if (def.buffer) { def.buffer.reset() } })
+    this.bufferMap = new Map()
   }
   get complete () {
-    return !this.structDefinition.find((def) => { return !def.buffer || !def.buffer.complete })
+    if (this.bufferMap.size !== this.definitionMap.size) { return false }
+    return !Array.from(this.bufferMap.values).find((buffer) => { return !buffer || !buffer.complete })
   }
   get data () {
     let data = {}
-    this.structDefinition.forEach((def) => {
-      if (def.buffer && def.buffer.complete) {
-        data[def.name] = def.buffer.data
-      }
-    })
+    this.bufferMap.forEach((buffer, name) => { data[name] = buffer.data })
     return data
   }
   sliceFrom (buf) {
-    for (let i = 0; i < this.structDefinition.length; i++) {
-      if (!this.structDefinition[i].buffer) {
-        this.structDefinition[i].buffer = this.structDefinition[i].bufferCreator(this.data)
+    for (let name of this.definitionMap.keys()) {
+      if (!this.bufferMap.has(name)) {
+        this.bufferMap.set(name, this.definitionMap.get(name)(this.data))
       }
-      if (!this.structDefinition[i].buffer.complete) {
-        buf = this.structDefinition[i].buffer.sliceFrom(buf)
-      }
-      if (!this.structDefinition[i].buffer.complete) {
-        break
-      }
+      let buffer = this.bufferMap.get(name)
+      if (!buffer.complete) { buf = buffer.sliceFrom(buf) }
+      if (!buffer.complete) { break }
     }
     return buf
   }
@@ -381,9 +376,9 @@ class InitParser extends Parser {
   constructor () {
     super()
     this.status = new SaneWord(SaneWord.type.INT)
-    this.buffer = new SaneStructure([
-      {name: 'version_code', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
-    ])
+    this.buffer = new SaneStructure(new Map([
+      ['version_code', () => new SaneWord(SaneWord.type.INT)]
+    ]))
   }
 }
 
@@ -392,12 +387,12 @@ class GetDevicesParser extends Parser {
     super()
     this.status = new SaneWord(SaneWord.type.INT)
     this.buffer = new SaneArray((index) => {
-      return new SanePointer(new SaneStructure([
-        {name: 'name', bufferCreator: () => new SaneString()},
-        {name: 'vendor', bufferCreator: () => new SaneString()},
-        {name: 'model', bufferCreator: () => new SaneString()},
-        {name: 'type', bufferCreator: () => new SaneString()}
-      ]))
+      return new SanePointer(new SaneStructure(new Map([
+        ['name', () => new SaneString()],
+        ['vendor', () => new SaneString()],
+        ['model', () => new SaneString()],
+        ['type', () => new SaneString()]
+      ])))
     })
   }
   parse (data) {
@@ -419,9 +414,9 @@ class OpenParser extends Parser {
   }
   _resetBuffer () {
     this.status = new SaneWord(SaneWord.type.INT)
-    this.buffer = new SaneStructure([
-      {name: 'handle', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
-    ])
+    this.buffer = new SaneStructure(new Map([
+      ['handle', () => new SaneWord(SaneWord.type.INT)]
+    ]))
     this.resource = new SaneString()
   }
 }
@@ -447,26 +442,26 @@ class GetOptionDescriptorsParser extends Parser {
     super()
     this.status = new SaneBytes(0)
     this.buffer = new SaneArray((index) => {
-      return new SanePointer(new SaneStructure([
-        {name: 'name', bufferCreator: () => new SaneString()},
-        {name: 'title', bufferCreator: () => new SaneString()},
-        {name: 'description', bufferCreator: () => new SaneString()},
-        {name: 'type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-        {name: 'units', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-        {name: 'size', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-        {name: 'cap', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-        {name: 'constraint', bufferCreator: (optionDescriptor) => new SaneStructure([
-          {name: 'type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-          {name: 'value', bufferCreator: (constraint) => {
+      return new SanePointer(new SaneStructure(new Map([
+        ['name', () => new SaneString()],
+        ['title', () => new SaneString()],
+        ['description', () => new SaneString()],
+        ['type', () => new SaneWord(SaneWord.type.INT)],
+        ['units', () => new SaneWord(SaneWord.type.INT)],
+        ['size', () => new SaneWord(SaneWord.type.INT)],
+        ['cap', () => new SaneWord(SaneWord.type.INT)],
+        ['constraint', (optionDescriptor) => new SaneStructure(new Map([
+          ['type', () => new SaneWord(SaneWord.type.INT)],
+          ['value', (constraint) => {
             if (constraint.type === 0) { // NONE
               return new SaneBytes(0)
             }
             if (constraint.type === 1) {// RANGE
-              return new SanePointer(new SaneStructure([
-                {name: 'min', bufferCreator: () => new SaneWord(optionDescriptor.type)},
-                {name: 'max', bufferCreator: () => new SaneWord(optionDescriptor.type)},
-                {name: 'quantization', bufferCreator: () => new SaneWord(optionDescriptor.type)}
-              ]))
+              return new SanePointer(new SaneStructure(new Map([
+                ['min', () => new SaneWord(optionDescriptor.type)],
+                ['max', () => new SaneWord(optionDescriptor.type)],
+                ['quantization', () => new SaneWord(optionDescriptor.type)]
+              ])))
             }
             if (constraint.type === 2) {// WORD_LIST
               return new SaneArray((index) => { return new SaneWord(optionDescriptor.type) })
@@ -474,9 +469,9 @@ class GetOptionDescriptorsParser extends Parser {
             if (constraint.type === 3) {// STRING_LIST
               return new SaneArray((index) => { return new SaneString() })
             }
-          }}
-        ])}
-      ]))
+          }]
+        ]))]
+      ])))
     })
   }
 }
@@ -485,20 +480,20 @@ class ControlOptionParser extends Parser {
   constructor () {
     super()
     this.status = new SaneWord(SaneWord.type.INT)
-    this.buffer = new SaneStructure([
-      {name: 'info', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'value_type', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'value_size', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'value', bufferCreator: (_) => {
+    this.buffer = new SaneStructure(new Map([
+      ['info', () => new SaneWord(SaneWord.type.INT)],
+      ['value_type', () => new SaneWord(SaneWord.type.INT)],
+      ['value_size', () => new SaneWord(SaneWord.type.INT)],
+      ['value', (_) => {
         if (_.value_type === 0) { return new SaneArray(() => { return new SaneWord(SaneWord.type.BOOL) }) }
         if (_.value_type === 1) { return new SaneArray(() => { return new SaneWord(SaneWord.type.INT) }) }
         if (_.value_type === 2) { return new SaneArray(() => { return new SaneWord(SaneWord.type.FIXED) }) }
         if (_.value_type === 3) { return new SaneString() }
         if (_.value_type === 4) { return new SaneArray(() => { return new SaneWord() }) }
         if (_.value_type === 5) { return new SaneArray(() => { return new SaneWord() }) }
-      }},
-      {name: 'resource', bufferCreator: () => new SaneString()}
-    ])
+      }],
+      ['resource', () => new SaneString()]
+    ]))
   }
 }
 
@@ -506,14 +501,14 @@ class GetParametersParser extends Parser {
   constructor () {
     super()
     this.status = new SaneWord(SaneWord.type.INT)
-    this.buffer = new SaneStructure([
-      {name: 'format', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'last_frame', bufferCreator: () => new SaneWord(SaneWord.type.BOOL)},
-      {name: 'bytes_per_line', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'pixels_per_line', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'lines', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'depth', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
-    ])
+    this.buffer = new SaneStructure(new Map([
+      ['format', () => new SaneWord(SaneWord.type.INT)],
+      ['last_frame', () => new SaneWord(SaneWord.type.BOOL)],
+      ['bytes_per_line', () => new SaneWord(SaneWord.type.INT)],
+      ['pixels_per_line', () => new SaneWord(SaneWord.type.INT)],
+      ['lines', () => new SaneWord(SaneWord.type.INT)],
+      ['depth', () => new SaneWord(SaneWord.type.INT)]
+    ]))
   }
 }
 
@@ -524,10 +519,10 @@ class StartParser extends Parser {
   }
   _resetBuffer () {
     this.status = new SaneWord(SaneWord.type.INT)
-    this.buffer = new SaneStructure([
-      {name: 'port', bufferCreator: () => new SaneWord(SaneWord.type.INT)},
-      {name: 'byte_order', bufferCreator: () => new SaneWord(SaneWord.type.INT)}
-    ])
+    this.buffer = new SaneStructure(new Map([
+      ['port', () => new SaneWord(SaneWord.type.INT)],
+      ['byte_order', () => new SaneWord(SaneWord.type.INT)]
+    ]))
     this.resource = new SaneString()
   }
   get complete () {
