@@ -112,6 +112,7 @@ class SaneBuffer {
       throw new TypeError('Cannot construct SaneBuffer instances directly')
     }
   }
+  reset () { this.buffer.reset() }
   get complete () { return this.buffer.complete }
   static bufferFor (data) { return data }
   get data () { return this.buffer.data }
@@ -131,6 +132,7 @@ class SaneBytes extends SaneBuffer {
     this.received = 0
     this.buffer = new Buffer(size)
   }
+  reset () { this.received = 0 }
   get complete () { return this.received === this.size }
   get data () { return this.buffer }
   sliceFrom (buf) {
@@ -209,6 +211,10 @@ class SanePointer extends SaneBuffer {
     this.isNullBuffer = new SaneWord(SaneWord.type.BOOL)
     this.pointerBuffer = pointerBuffer
   }
+  reset () {
+    this.isNullBuffer.reset()
+    this.pointerBuffer.reset()
+  }
   get complete () {
     return this.isNull || this.pointerBuffer.complete
   }
@@ -240,6 +246,9 @@ class SaneStructure extends SaneBuffer {
   constructor (structDefinition) {
     super()
     this.structDefinition = structDefinition
+  }
+  reset () {
+    this.structDefinition.forEach((def) => { if (def.buffer) { def.buffer.reset() } })
   }
   get complete () {
     return !this.structDefinition.find((def) => { return !def.buffer || !def.buffer.complete })
@@ -280,14 +289,18 @@ class SaneArray extends SaneBuffer {
   constructor (itemBufferCreator) {
     super()
     this.lengthBuffer = new SaneWord(SaneWord.type.INT)
-    this.buffer = []
+    this.buffers = []
     this.itemBufferCreator = itemBufferCreator
+  }
+  reset () {
+    this.lengthBuffer.reset()
+    this.buffers.forEach((buffer) => buffer && buffer.reset())
   }
   get complete () {
     if (!this.lengthBuffer.complete) { return false }
     let complete = true
-    for (let i = 0; i < this.buffer.length; i++) {
-      complete = this.buffer[i] && this.buffer[i].complete
+    for (let i = 0; i < this.buffers.length; i++) {
+      complete = this.buffers[i] && this.buffers[i].complete
       if (!complete) { break }
     }
     return complete
@@ -297,18 +310,18 @@ class SaneArray extends SaneBuffer {
     return Buffer.concat(data)
   }
   get data () {
-    return this.buffer.map((item) => { return item ? item.data : undefined })
+    return this.buffers.map((buffer) => { return buffer ? buffer.data : undefined })
   }
   sliceFrom (buf) {
     if (!this.lengthBuffer.complete) {
       buf = this.lengthBuffer.sliceFrom(buf)
       if (this.lengthBuffer.complete) {
-        this.buffer = new Array(this.lengthBuffer.data).fill(0) // TODO why is fill(0) required
-        this.buffer = this.buffer.map((_, i) => { return this.itemBufferCreator(i) })
+        this.buffers = new Array(this.lengthBuffer.data).fill(0) // TODO why is fill(0) required
+        this.buffers = this.buffers.map((_, i) => { return this.itemBufferCreator(i) })
       }
     }
-    for (let i = 0; i < this.buffer.length; i++) {
-      if (!this.buffer[i].complete) { buf = this.buffer[i].sliceFrom(buf) }
+    for (let i = 0; i < this.buffers.length; i++) {
+      if (!this.buffers[i].complete) { buf = this.buffers[i].sliceFrom(buf) }
     }
     return buf
   }
@@ -352,7 +365,9 @@ class Parser extends EventEmitter {
       let resource = this.resource.data
       if (resource.length) {
         console.log('authorization required:', resource)
-        this._resetBuffer() // TODO
+        this.status.reset()
+        this.buffer.reset()
+        this.resource.reset()
         this.emit('authorize', resource)
       } else {
         this.emit('complete', this.data)
