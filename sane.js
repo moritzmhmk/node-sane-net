@@ -70,12 +70,9 @@ class SaneSocket extends EventEmitter {
     var buf = Buffer.concat([rpcCode, sanetypes.string(deviceName)])
     return this.send(buf, new OpenParser())
   }
-  authorize (resource, username, password, originalParser) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_AUTHORIZE)
-    var salt = resource.split('$MD5$')[1]
-    var pw = '$MD5$' + md5(salt + password)
-    var buf = Buffer.concat([rpcCode, sanetypes.string(resource), sanetypes.string(username), sanetypes.string(pw)])
-    return this.send(buf, new AuthorizeParser(originalParser))
+  close () {
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CLOSE)
+    return this.send(rpcCode, new Parser())
   }
   getOptionDescriptors (handle) {
     var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
@@ -105,6 +102,23 @@ class SaneSocket extends EventEmitter {
     handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new StartParser())
+  }
+  cancel (handle) {
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CANCEL)
+    handle = sanetypes.word(handle)
+    var buf = Buffer.concat([rpcCode, handle])
+    return this.send(buf, new Parser())
+  }
+  authorize (resource, username, password, originalParser) {
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_AUTHORIZE)
+    var salt = resource.split('$MD5$')[1]
+    var pw = '$MD5$' + md5(salt + password)
+    var buf = Buffer.concat([rpcCode, sanetypes.string(resource), sanetypes.string(username), sanetypes.string(pw)])
+    return this.send(buf, new AuthorizeParser(originalParser))
+  }
+  exit () {
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_EXIT)
+    return this.send(rpcCode, new Parser())
   }
 }
 
@@ -351,7 +365,7 @@ class Parser extends EventEmitter {
     this.resource = new SaneBytes(0)
   }
   get data () { return this.buffer.data }
-  get complete () { return this.buffer.complete }
+  get complete () { return this.status.complete && this.buffer.complete && this.resource.complete }
   sliceFrom (data) {
     data = this.status.sliceFrom(data)
     data = this.buffer.sliceFrom(data)
@@ -406,13 +420,6 @@ class OpenParser extends Parser {
       ['handle', () => new SaneWord(enums.valueType.INT)]
     ]))
     this.resource = new SaneString()
-  }
-}
-
-class AuthorizeParser extends Parser {
-  constructor (originalParser) {
-    super()
-    this.buffer = originalParser
   }
 }
 
@@ -503,5 +510,12 @@ class StartParser extends Parser {
   }
   get data () {
     return this.buffer.data
+  }
+}
+
+class AuthorizeParser extends Parser {
+  constructor (originalParser) {
+    super()
+    this.buffer = originalParser
   }
 }

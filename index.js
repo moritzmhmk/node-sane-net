@@ -105,6 +105,10 @@ class PNGTransform extends Transform {
     this.currentLineLength = width * 3 // TODO
     this.firstLine = false
     this.headerWritten = false
+    this._zlib = zlib.createDeflate()
+    this._zlib.on('data', (data) => {
+      this.writePNGChunk('IDAT', data)
+    })
   }
   writePNGChunk (id, data) {
     console.log('->writePNGChunk', id)
@@ -151,10 +155,6 @@ class PNGTransform extends Transform {
       chunk[11] = 0 // filter
       chunk[12] = 0 // interlace
       this.writePNGChunk('IHDR', chunk)
-      this._zlib = zlib.createDeflate()
-      this._zlib.on('data', (data) => {
-        this.writePNGChunk('IDAT', data)
-      })
     }
     return this.writePixels(data, done)
   }
