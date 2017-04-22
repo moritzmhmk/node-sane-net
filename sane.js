@@ -303,6 +303,7 @@ class SaneWord extends SaneBuffer {
  * A character is currently encoded as an 8-bit ISO LATIN-1 value.
  * NOTE: An extension to support wider character sets (16 or 32 bits) is planned for the future,
  * but not supported at this point.
+ * @extends SaneBuffer
  */
 class SaneChar extends SaneBuffer {
   constructor () {
@@ -319,7 +320,7 @@ class SaneChar extends SaneBuffer {
  * then (in the case of a non-NULL pointer) followed by the value that the pointer points to.
  * The word is 0 in case of a non-NULL pointer (sic!).
  * In the case of a NULL pointer, no bytes are encoded for the pointer value.
- *
+ * @extends SaneBuffer
  * @param {SaneBuffer} pointerBuffer - the buffer to store the value of the pointer
  */
 class SanePointer extends SaneBuffer {
@@ -356,7 +357,7 @@ class SanePointer extends SaneBuffer {
 
 /**
  * A structure is encoded by simply encoding the structure members in the order in which they appear.
- *
+ * @extends SaneBuffer
  * @param {Map} structDefinition definition of the struct (String => SaneBuffer)
  */
 class SaneStructure extends SaneBuffer {
@@ -394,7 +395,7 @@ class SaneStructure extends SaneBuffer {
  * An array is encoded by a word that indicates the length of the array
  * followed by the values of the elements in the array.
  * The length may be zero in which case no bytes are encoded for the element values.
- *
+ * @extends SaneBuffer
  * @param {function} itemBufferCreator should return a new SaneBuffer, called for every array element.
  */
 class SaneArray extends SaneBuffer {
@@ -443,6 +444,7 @@ class SaneArray extends SaneBuffer {
  * A string pointer is encoded as a SaneArray of SaneChar.
  * The trailing NUL byte is considered part of the array.
  * A NULL pointer is encoded as a zero-length array.
+ * @extends SaneBuffer
  */
 class SaneString extends SaneBuffer {
   constructor () {
