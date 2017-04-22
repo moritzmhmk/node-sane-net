@@ -247,7 +247,7 @@ class SaneStructure extends SaneBuffer {
   }
   get complete () {
     if (this.bufferMap.size !== this.definitionMap.size) { return false }
-    return !Array.from(this.bufferMap.values).find((buffer) => { return !buffer || !buffer.complete })
+    return !Array.from(this.bufferMap.values()).find((buffer) => { return !buffer || !buffer.complete })
   }
   get data () {
     let data = {}
