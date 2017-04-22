@@ -26,7 +26,7 @@ saneClient.connect(6566, '127.0.0.1')
 })
 .then((data) => {
   console.log('open device response', data)
-  return saneClient.getOptionDescriptors(data.handle)
+  return saneClient.getOptionDescriptors(data)
 })
 .then((data) => {
   console.log('get option descriptors response', data)
@@ -45,7 +45,7 @@ saneClient.connect(6566, '127.0.0.1')
 })
 .then((data) => {
   console.log('get parameters response', data)
-  width = data.pixels_per_line
+  width = data.pixelsPerLine
   height = data.lines
   var handle = new Buffer([0, 0, 0, 0]) // TODO use actual handle
   return saneClient.start(handle)
