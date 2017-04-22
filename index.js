@@ -10,6 +10,10 @@ const sane = require('./sane')
 let width, height
 
 let saneClient = new sane.Socket()
+saneClient.on('authorize', (backend, callback) => {
+  console.log(`backend "${backend}" requires authorization`)
+  callback('moritz', 'test')
+})
 saneClient.connect(6566, '127.0.0.1')
 .then(() => saneClient.init())
 .then((data) => {

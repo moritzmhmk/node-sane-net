@@ -6,8 +6,9 @@ const md5 = require('md5')
 const sanetypes = require('./sanetypes')
 const enums = require('./enums')
 
-class SaneSocket {
+class SaneSocket extends EventEmitter {
   constructor () {
+    super()
     this.responseParsers = []
     this.socket = new net.Socket()
     this.socket.on('data', (data) => {
@@ -43,7 +44,10 @@ class SaneSocket {
       responseParser.once('complete', resolve)
       responseParser.on('authorize', (resource) => {
         this.responseParsers.shift()
-        this.authorize(resource, 'moritz', 'test', responseParser)
+        let backend = resource.split('$MD5$')[0]
+        this.emit('authorize', backend, (username, password) => {
+          this.authorize(resource, username, password, responseParser)
+        })
       })
       responseParser.once('error', err => reject(err))
       this.socket.write(msg)
@@ -465,9 +469,9 @@ class ControlOptionParser extends Parser {
         if (_.value_type === 3) { return new SaneString() }
         if (_.value_type === 4) { return new SaneArray(() => { return new SaneWord() }) }
         if (_.value_type === 5) { return new SaneArray(() => { return new SaneWord() }) }
-      }],
-      ['resource', () => new SaneString()]
+      }]
     ]))
+    this.resource = new SaneString()
   }
 }
 
