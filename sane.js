@@ -19,7 +19,7 @@ class SaneSocket {
     })
   }
   _parse (data) { // TODO avoid infinte loop...
-    data = this.responseParsers[0].parse(data)
+    data = this.responseParsers[0].sliceFrom(data)
     if (data.length) {
       if (this.responseParsers[0]) {
         this._parse(data)
@@ -36,6 +36,7 @@ class SaneSocket {
     })
   }
   send (msg, responseParser) {
+    console.log('send', msg)
     return new Promise((resolve, reject) => {
       this.responseParsers.push(responseParser)
       responseParser.once('complete', (data) => this.responseParsers.shift())
@@ -44,6 +45,7 @@ class SaneSocket {
         this.responseParsers.shift()
         this.authorize(resource, 'moritz', 'test', responseParser)
       })
+      responseParser.once('error', err => reject(err))
       this.socket.write(msg)
     })
   }
@@ -340,19 +342,23 @@ class SaneString extends SaneBuffer {
 class Parser extends EventEmitter {
   constructor () {
     super()
-    this.status = new SaneBytes(0)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneBytes(0)
     this.resource = new SaneBytes(0)
   }
   get data () { return this.buffer.data }
   get complete () { return this.buffer.complete }
-  parse (data) {
+  sliceFrom (data) {
     data = this.status.sliceFrom(data)
     data = this.buffer.sliceFrom(data)
     data = this.resource.sliceFrom(data)
     if (this.complete) {
       let resource = this.resource.data
-      if (resource.length) {
+      if (this.status.data !== enums.status.GOOD) {
+        let status = enums.status[this.status.data]
+        console.log('error', status)
+        this.emit('error', status)
+      } else if (resource.length) {
         console.log('authorization required:', resource)
         this.status.reset()
         this.buffer.reset()
@@ -369,7 +375,6 @@ class Parser extends EventEmitter {
 class InitParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
       ['version_code', () => new SaneWord(enums.valueType.INT)]
     ]))
@@ -379,7 +384,6 @@ class InitParser extends Parser {
 class GetDevicesParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneArray((index) => {
       return new SanePointer(new SaneStructure(new Map([
         ['name', () => new SaneString()],
@@ -389,25 +393,11 @@ class GetDevicesParser extends Parser {
       ])))
     })
   }
-  parse (data) {
-    if (!this.status.complete) {
-      data = this.status.sliceFrom(data)
-    }
-    if (!this.buffer.complete) {
-      data = this.buffer.sliceFrom(data)
-    }
-    if (this.complete) { this.emit('complete', this.data) }
-    return data
-  }
 }
 
 class OpenParser extends Parser {
   constructor () {
     super()
-    this._resetBuffer()
-  }
-  _resetBuffer () {
-    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
       ['handle', () => new SaneWord(enums.valueType.INT)]
     ]))
@@ -418,23 +408,14 @@ class OpenParser extends Parser {
 class AuthorizeParser extends Parser {
   constructor (originalParser) {
     super()
-    this.status = new SaneWord(enums.valueType.INT)
-    this.originalParser = originalParser
-  }
-  get complete () { return this.originalParser.complete }
-  get data () { return this.originalParser.data }
-  parse (data) {
-    data = this.status.sliceFrom(data)
-    data = this.originalParser.parse(data)
-    if (this.complete) { this.emit('complete', this.data) }
-    return data
+    this.buffer = originalParser
   }
 }
 
 class GetOptionDescriptorsParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneBytes(0)
+    this.status.sliceFrom(new Buffer([0, 0, 0, 0])) // there is no status response - set to "GOOD" TODO
     this.buffer = new SaneArray((index) => {
       return new SanePointer(new SaneStructure(new Map([
         ['name', () => new SaneString()],
@@ -473,7 +454,6 @@ class GetOptionDescriptorsParser extends Parser {
 class ControlOptionParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
       ['info', () => new SaneWord(enums.valueType.INT)],
       ['value_type', () => new SaneWord(enums.valueType.INT)],
@@ -494,7 +474,6 @@ class ControlOptionParser extends Parser {
 class GetParametersParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
       ['format', () => new SaneWord(enums.valueType.INT)],
       ['last_frame', () => new SaneWord(enums.valueType.BOOL)],
@@ -509,10 +488,6 @@ class GetParametersParser extends Parser {
 class StartParser extends Parser {
   constructor () {
     super()
-    this._resetBuffer()
-  }
-  _resetBuffer () {
-    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
       ['port', () => new SaneWord(enums.valueType.INT)],
       ['byte_order', () => new SaneWord(enums.valueType.INT)]
@@ -524,21 +499,5 @@ class StartParser extends Parser {
   }
   get data () {
     return this.buffer.data
-  }
-  parse (data) {
-    data = this.status.sliceFrom(data)
-    data = this.buffer.sliceFrom(data)
-    data = this.resource.sliceFrom(data)
-    if (this.complete) {
-      if (this.resource.data.length) {
-        console.log('authorization required', this.resource.data.length, this.resource.data)
-        let resource = this.resource.data
-        this._resetBuffer()
-        this.emit('authorize', resource)
-      } else {
-        this.emit('complete', this.data)
-      }
-    }
-    return data
   }
 }
