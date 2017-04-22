@@ -1,4 +1,5 @@
 const net = require('net')
+const path = require('path')
 const fs = require('fs')
 
 const crc32 = require('buffer-crc32')
@@ -28,10 +29,10 @@ saneClient.connect(6566, '127.0.0.1')
   var handle = new Buffer([0, 0, 0, 0]) // TODO use actual handle
   var option = 7
   var action = 1
-  var value_type = data[option].type
-  var value_size = data[option].size
+  var valueType = data[option].type
+  var valueSize = data[option].size
   var value = [120]
-  return saneClient.controlOption(handle, option, action, value_type, value_size, value)
+  return saneClient.controlOption(handle, option, action, valueType, valueSize, value)
 })
 .then((data) => {
   console.log('control option response', data)
@@ -47,7 +48,7 @@ saneClient.connect(6566, '127.0.0.1')
 })
 .then((data) => {
   console.log('start response', data)
-  var png = fs.createWriteStream(__dirname + '/scan.png')
+  var png = fs.createWriteStream(path.join(__dirname, '/scan.png'))
   console.log(width, height)
   var saneTransform = new SaneImageTransform(width, height)
   var pngTransform = new PNGTransform(width, height)
@@ -112,7 +113,6 @@ class PNGTransform extends Transform {
     this.push(crc32(data, crc32(header.slice(4))))
   }
   writePixels (data, done) {
-    let lines = 1
     let readLine = (data) => {
       let filter = new Buffer(0)
       if (this.currentLineConsumed === 0) {
@@ -121,7 +121,6 @@ class PNGTransform extends Transform {
       let lineLeft = this.currentLineLength - this.currentLineConsumed
       if (data.length > lineLeft) {
         let end = data.slice(0, lineLeft)
-        lines++
         this.currentLineConsumed = 0
         return Buffer.concat([filter, end, readLine(data.slice(lineLeft))])
       } else {

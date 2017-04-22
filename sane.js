@@ -79,15 +79,15 @@ class SaneSocket {
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetOptionDescriptorsParser())
   }
-  controlOption (handle, option, action, value_type, value_size, value) {
+  controlOption (handle, option, action, valueType, valueSize, value) {
     var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CONTROL_OPTION)
     handle = sanetypes.word(handle)
     option = sanetypes.word(option)
     action = sanetypes.word(action)
-    value = sanetypes.array(value, (item) => { return sanetypes.word(item, value_type) })
-    value_type = sanetypes.word(value_type)
-    value_size = sanetypes.word(value_size)
-    var buf = Buffer.concat([rpcCode, handle, option, action, value_type, value_size, value])
+    value = sanetypes.array(value, (item) => { return sanetypes.word(item, valueType) })
+    valueType = sanetypes.word(valueType)
+    valueSize = sanetypes.word(valueSize)
+    var buf = Buffer.concat([rpcCode, handle, option, action, valueType, valueSize, value])
     return this.send(buf, new ControlOptionParser())
   }
   getParameters (handle) {
@@ -431,17 +431,17 @@ class GetOptionDescriptorsParser extends Parser {
             if (constraint.type === 0) { // NONE
               return new SaneBytes(0)
             }
-            if (constraint.type === 1) {// RANGE
+            if (constraint.type === 1) { // RANGE
               return new SanePointer(new SaneStructure(new Map([
                 ['min', () => new SaneWord(optionDescriptor.type)],
                 ['max', () => new SaneWord(optionDescriptor.type)],
                 ['quantization', () => new SaneWord(optionDescriptor.type)]
               ])))
             }
-            if (constraint.type === 2) {// WORD_LIST
+            if (constraint.type === 2) { // WORD_LIST
               return new SaneArray((index) => { return new SaneWord(optionDescriptor.type) })
             }
-            if (constraint.type === 3) {// STRING_LIST
+            if (constraint.type === 3) { // STRING_LIST
               return new SaneArray((index) => { return new SaneString() })
             }
           }]

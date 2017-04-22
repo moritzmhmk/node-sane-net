@@ -1,5 +1,5 @@
 function makeBidirectional (o) {
-  Object.keys(o).forEach((k) => o[o[k]] = k)
+  Object.keys(o).forEach(function (k) { o[o[k]] = k })
 }
 
 let rpc = {
