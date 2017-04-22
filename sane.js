@@ -4,6 +4,7 @@ const EventEmitter = require('events')
 const md5 = require('md5')
 
 const sanetypes = require('./sanetypes')
+const enums = require('./enums')
 
 class SaneSocket {
   constructor () {
@@ -47,37 +48,37 @@ class SaneSocket {
     })
   }
   init () {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_INIT)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_INIT)
     var versionCode = sanetypes.versionCode(1, 0, 3)
     var name = sanetypes.string('moritz')
     var buf = Buffer.concat([rpcCode, versionCode, name])
     return this.send(buf, new InitParser())
   }
   getDevices () {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_DEVICES)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_DEVICES)
     console.log(GetDevicesParser)
     return this.send(rpcCode, new GetDevicesParser())
   }
   open (deviceName) {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_OPEN)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_OPEN)
     var buf = Buffer.concat([rpcCode, sanetypes.string(deviceName)])
     return this.send(buf, new OpenParser())
   }
   authorize (resource, username, password, originalParser) {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_AUTHORIZE)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_AUTHORIZE)
     var salt = resource.split('$MD5$')[1]
     var pw = '$MD5$' + md5(salt + password)
     var buf = Buffer.concat([rpcCode, sanetypes.string(resource), sanetypes.string(username), sanetypes.string(pw)])
     return this.send(buf, new AuthorizeParser(originalParser))
   }
   getOptionDescriptors (handle) {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
     handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetOptionDescriptorsParser())
   }
   controlOption (handle, option, action, value_type, value_size, value) {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_CONTROL_OPTION)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CONTROL_OPTION)
     handle = sanetypes.word(handle)
     option = sanetypes.word(option)
     action = sanetypes.word(action)
@@ -88,13 +89,13 @@ class SaneSocket {
     return this.send(buf, new ControlOptionParser())
   }
   getParameters (handle) {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_GET_PARAMETERS)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_PARAMETERS)
     handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new GetParametersParser())
   }
   start (handle) {
-    var rpcCode = sanetypes.word(sanetypes.rpc.SANE_NET_START)
+    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_START)
     handle = sanetypes.word(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new StartParser())
@@ -152,13 +153,6 @@ class SaneBytes extends SaneBuffer {
 * @param type type of value this word encodes see TODO
 */
 class SaneWord extends SaneBuffer {
-  static get type () { // TODO move to some enum collection
-    return {
-      'BOOL': 0,
-      'INT': 1,
-      'FIXED': 2
-    }
-  }
   constructor (type) {
     super()
     this.type = type
@@ -175,9 +169,9 @@ class SaneWord extends SaneBuffer {
   }
   get data () {
     let i = this.buffer.data.readInt32BE() // TODO signed or unsinged?
-    if (this.type === SaneWord.type.BOOL) { return i }
-    if (this.type === SaneWord.type.INT) { return i }
-    if (this.type === SaneWord.type.FIXED) { return i / (1 << 16) }
+    if (this.type === enums.valueType.BOOL) { return i }
+    if (this.type === enums.valueType.INT) { return i }
+    if (this.type === enums.valueType.FIXED) { return i / (1 << 16) }
     return i
   }
 }
@@ -208,7 +202,7 @@ class SaneChar extends SaneBuffer {
 class SanePointer extends SaneBuffer {
   constructor (pointerBuffer) {
     super()
-    this.isNullBuffer = new SaneWord(SaneWord.type.BOOL)
+    this.isNullBuffer = new SaneWord(enums.valueType.BOOL)
     this.pointerBuffer = pointerBuffer
   }
   reset () {
@@ -283,7 +277,7 @@ class SaneStructure extends SaneBuffer {
 class SaneArray extends SaneBuffer {
   constructor (itemBufferCreator) {
     super()
-    this.lengthBuffer = new SaneWord(SaneWord.type.INT)
+    this.lengthBuffer = new SaneWord(enums.valueType.INT)
     this.buffers = []
     this.itemBufferCreator = itemBufferCreator
   }
@@ -375,9 +369,9 @@ class Parser extends EventEmitter {
 class InitParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
-      ['version_code', () => new SaneWord(SaneWord.type.INT)]
+      ['version_code', () => new SaneWord(enums.valueType.INT)]
     ]))
   }
 }
@@ -385,7 +379,7 @@ class InitParser extends Parser {
 class GetDevicesParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneArray((index) => {
       return new SanePointer(new SaneStructure(new Map([
         ['name', () => new SaneString()],
@@ -413,9 +407,9 @@ class OpenParser extends Parser {
     this._resetBuffer()
   }
   _resetBuffer () {
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
-      ['handle', () => new SaneWord(SaneWord.type.INT)]
+      ['handle', () => new SaneWord(enums.valueType.INT)]
     ]))
     this.resource = new SaneString()
   }
@@ -424,7 +418,7 @@ class OpenParser extends Parser {
 class AuthorizeParser extends Parser {
   constructor (originalParser) {
     super()
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.originalParser = originalParser
   }
   get complete () { return this.originalParser.complete }
@@ -446,12 +440,12 @@ class GetOptionDescriptorsParser extends Parser {
         ['name', () => new SaneString()],
         ['title', () => new SaneString()],
         ['description', () => new SaneString()],
-        ['type', () => new SaneWord(SaneWord.type.INT)],
-        ['units', () => new SaneWord(SaneWord.type.INT)],
-        ['size', () => new SaneWord(SaneWord.type.INT)],
-        ['cap', () => new SaneWord(SaneWord.type.INT)],
+        ['type', () => new SaneWord(enums.valueType.INT)],
+        ['units', () => new SaneWord(enums.valueType.INT)],
+        ['size', () => new SaneWord(enums.valueType.INT)],
+        ['cap', () => new SaneWord(enums.valueType.INT)],
         ['constraint', (optionDescriptor) => new SaneStructure(new Map([
-          ['type', () => new SaneWord(SaneWord.type.INT)],
+          ['type', () => new SaneWord(enums.valueType.INT)],
           ['value', (constraint) => {
             if (constraint.type === 0) { // NONE
               return new SaneBytes(0)
@@ -479,15 +473,15 @@ class GetOptionDescriptorsParser extends Parser {
 class ControlOptionParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
-      ['info', () => new SaneWord(SaneWord.type.INT)],
-      ['value_type', () => new SaneWord(SaneWord.type.INT)],
-      ['value_size', () => new SaneWord(SaneWord.type.INT)],
+      ['info', () => new SaneWord(enums.valueType.INT)],
+      ['value_type', () => new SaneWord(enums.valueType.INT)],
+      ['value_size', () => new SaneWord(enums.valueType.INT)],
       ['value', (_) => {
-        if (_.value_type === 0) { return new SaneArray(() => { return new SaneWord(SaneWord.type.BOOL) }) }
-        if (_.value_type === 1) { return new SaneArray(() => { return new SaneWord(SaneWord.type.INT) }) }
-        if (_.value_type === 2) { return new SaneArray(() => { return new SaneWord(SaneWord.type.FIXED) }) }
+        if (_.value_type === 0) { return new SaneArray(() => { return new SaneWord(enums.valueType.BOOL) }) }
+        if (_.value_type === 1) { return new SaneArray(() => { return new SaneWord(enums.valueType.INT) }) }
+        if (_.value_type === 2) { return new SaneArray(() => { return new SaneWord(enums.valueType.FIXED) }) }
         if (_.value_type === 3) { return new SaneString() }
         if (_.value_type === 4) { return new SaneArray(() => { return new SaneWord() }) }
         if (_.value_type === 5) { return new SaneArray(() => { return new SaneWord() }) }
@@ -500,14 +494,14 @@ class ControlOptionParser extends Parser {
 class GetParametersParser extends Parser {
   constructor () {
     super()
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
-      ['format', () => new SaneWord(SaneWord.type.INT)],
-      ['last_frame', () => new SaneWord(SaneWord.type.BOOL)],
-      ['bytes_per_line', () => new SaneWord(SaneWord.type.INT)],
-      ['pixels_per_line', () => new SaneWord(SaneWord.type.INT)],
-      ['lines', () => new SaneWord(SaneWord.type.INT)],
-      ['depth', () => new SaneWord(SaneWord.type.INT)]
+      ['format', () => new SaneWord(enums.valueType.INT)],
+      ['last_frame', () => new SaneWord(enums.valueType.BOOL)],
+      ['bytes_per_line', () => new SaneWord(enums.valueType.INT)],
+      ['pixels_per_line', () => new SaneWord(enums.valueType.INT)],
+      ['lines', () => new SaneWord(enums.valueType.INT)],
+      ['depth', () => new SaneWord(enums.valueType.INT)]
     ]))
   }
 }
@@ -518,10 +512,10 @@ class StartParser extends Parser {
     this._resetBuffer()
   }
   _resetBuffer () {
-    this.status = new SaneWord(SaneWord.type.INT)
+    this.status = new SaneWord(enums.valueType.INT)
     this.buffer = new SaneStructure(new Map([
-      ['port', () => new SaneWord(SaneWord.type.INT)],
-      ['byte_order', () => new SaneWord(SaneWord.type.INT)]
+      ['port', () => new SaneWord(enums.valueType.INT)],
+      ['byte_order', () => new SaneWord(enums.valueType.INT)]
     ]))
     this.resource = new SaneString()
   }
