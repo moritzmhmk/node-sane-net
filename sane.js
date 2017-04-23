@@ -100,27 +100,22 @@ class SaneSocket extends EventEmitter {
           ['units', () => new SaneWord(enums.valueType.INT)],
           ['size', () => new SaneWord(enums.valueType.INT)],
           ['cap', () => new SaneWord(enums.valueType.INT)],
-          ['constraint', (optionDescriptor) => new SaneStructure(new Map([
-            ['type', () => new SaneWord(enums.valueType.INT)],
-            ['value', (constraint) => {
-              if (constraint.type === 0) { // NONE
+          ['constraint', (optionDescriptor) => new SaneUnion((type) => {
+            switch (type) {
+              case enums.constraintType.NONE:
                 return new SaneBytes(0)
-              }
-              if (constraint.type === 1) { // RANGE
+              case enums.constraintType.RANGE:
                 return new SanePointer(new SaneStructure(new Map([
                   ['min', () => new SaneWord(optionDescriptor.type)],
                   ['max', () => new SaneWord(optionDescriptor.type)],
                   ['quantization', () => new SaneWord(optionDescriptor.type)]
                 ])))
-              }
-              if (constraint.type === 2) { // WORD_LIST
-                return new SaneArray((index) => { return new SaneWord(optionDescriptor.type) })
-              }
-              if (constraint.type === 3) { // STRING_LIST
-                return new SaneArray((index) => { return new SaneString() })
-              }
-            }]
-          ]))]
+              case enums.constraintType.WORD_LIST:
+                return new SaneArray(index => new SaneWord(optionDescriptor.type))
+              case enums.constraintType.STRING_LIST:
+                return new SaneArray(index => new SaneString())
+            }
+          })]
         ])))
       }),
       false,
@@ -475,6 +470,23 @@ class SaneString extends SaneBuffer {
     let str = this.buffer.data.join('')
     str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
     return str
+  }
+}
+
+/**
+ * A union is encoded by a tag value that indicates which of the union members is the active one
+ * and the union itself (encoded simply by encoding the value of the currently active member).
+ * @extends SaneBuffer
+ * @param {function} unionBufferCreator should return a new SaneBuffer, called with the tag as argument.
+ */
+class SaneUnion extends SaneBuffer {
+  constructor (unionBufferCreator) {
+    super()
+    this.unionBufferCreator = unionBufferCreator
+    this.buffer = new SaneStructure(new Map([
+      ['type', () => new SaneWord(enums.valueType.INT)],
+      ['value', union => this.unionBufferCreator(union.type)]
+    ]))
   }
 }
 
