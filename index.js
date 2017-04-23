@@ -30,24 +30,23 @@ saneClient.connect(6566, '127.0.0.1')
 })
 .then((data) => {
   console.log('get option descriptors response', data)
-  var handle = new Buffer([0, 0, 0, 0]) // TODO use actual handle
+  var handle = 0 // TODO use actual handle
   var option = 7
   var action = 1
   var valueType = data[option].type
-  var valueSize = data[option].size
-  var value = [120]
-  return saneClient.controlOption(handle, option, action, valueType, valueSize, value)
+  var value = 120
+  return saneClient.controlOption(handle, option, action, value, valueType)
 })
 .then((data) => {
   console.log('control option response', data)
-  var handle = new Buffer([0, 0, 0, 0]) // TODO use actual handle
+  var handle = 0 // TODO use actual handle
   return saneClient.getParameters(handle)
 })
 .then((data) => {
   console.log('get parameters response', data)
   width = data.pixelsPerLine
   height = data.lines
-  var handle = new Buffer([0, 0, 0, 0]) // TODO use actual handle
+  var handle = 0 // TODO use actual handle
   return saneClient.start(handle)
 })
 .then((data) => {

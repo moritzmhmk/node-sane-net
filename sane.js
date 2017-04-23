@@ -3,7 +3,6 @@ const EventEmitter = require('events')
 
 const md5 = require('md5')
 
-const sanetypes = require('./sanetypes')
 const enums = require('./enums')
 
 class SaneSocket extends EventEmitter {
@@ -54,14 +53,17 @@ class SaneSocket extends EventEmitter {
     })
   }
   init () {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_INIT)
-    var versionCode = sanetypes.versionCode(1, 0, 3)
-    var name = sanetypes.string('moritz')
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_INIT)
+    var major = 1
+    var minor = 0
+    var build = 3
+    var versionCode = SaneWord.bufferFor(major & 0xFF << 24 || minor & 0xFF << 16 || build & 0xFFFF)
+    var name = SaneString.bufferFor('moritz')
     var buf = Buffer.concat([rpcCode, versionCode, name])
     return this.send(buf, new Parser(new SaneWord(enums.valueType.INT), true, false))
   }
   getDevices () {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_DEVICES)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_GET_DEVICES)
     return this.send(rpcCode, new Parser(
       new SaneArray((index) => {
         return new SanePointer(new SaneStructure(new Map([
@@ -76,17 +78,17 @@ class SaneSocket extends EventEmitter {
     ))
   }
   open (deviceName) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_OPEN)
-    var buf = Buffer.concat([rpcCode, sanetypes.string(deviceName)])
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_OPEN)
+    var buf = Buffer.concat([rpcCode, SaneString.bufferFor(deviceName)])
     return this.send(buf, new Parser(new SaneWord(enums.valueType.INT), true, true))
   }
   close () {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CLOSE)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_CLOSE)
     return this.send(rpcCode, new Parser())
   }
   getOptionDescriptors (handle) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
-    handle = sanetypes.word(handle)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
+    handle = SaneWord.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(
       new SaneArray((index) => {
@@ -125,14 +127,27 @@ class SaneSocket extends EventEmitter {
       false
     ))
   }
-  controlOption (handle, option, action, valueType, valueSize, value) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CONTROL_OPTION)
-    handle = sanetypes.word(handle)
-    option = sanetypes.word(option)
-    action = sanetypes.word(action)
-    value = sanetypes.array(value, (item) => { return sanetypes.word(item, valueType) })
-    valueType = sanetypes.word(valueType)
-    valueSize = sanetypes.word(valueSize)
+  controlOption (handle, option, action, value, valueType) {
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_CONTROL_OPTION)
+    handle = SaneWord.bufferFor(handle)
+    option = SaneWord.bufferFor(option)
+    action = SaneWord.bufferFor(action)
+    switch (valueType) {
+      case enums.valueType.BOOL:
+      case enums.valueType.INT:
+      case enums.valueType.FIXED:
+        value = SaneArray.bufferFor([SaneWord.bufferFor(value, valueType)])
+        break
+      case enums.valueType.STRING:
+        value = SaneString.bufferFor(value)
+        break
+      case enums.valueType.BUTTON:
+      case enums.valueType.GROUP:
+      default:
+        value = new Buffer(0)
+    }
+    valueType = SaneWord.bufferFor(valueType)
+    let valueSize = SaneWord.bufferFor(value.length - 4) // subtract the 4 bytes indicating the length in words
     var buf = Buffer.concat([rpcCode, handle, option, action, valueType, valueSize, value])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
@@ -153,8 +168,8 @@ class SaneSocket extends EventEmitter {
     ))
   }
   getParameters (handle) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_GET_PARAMETERS)
-    handle = sanetypes.word(handle)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_GET_PARAMETERS)
+    handle = SaneWord.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
@@ -170,8 +185,8 @@ class SaneSocket extends EventEmitter {
     ))
   }
   start (handle) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_START)
-    handle = sanetypes.word(handle)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_START)
+    handle = SaneWord.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
@@ -183,20 +198,22 @@ class SaneSocket extends EventEmitter {
     ))
   }
   cancel (handle) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_CANCEL)
-    handle = sanetypes.word(handle)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_CANCEL)
+    handle = SaneWord.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(new SaneWord(), false, false))
   }
   authorize (resource, username, password, originalParser) {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_AUTHORIZE)
     var salt = resource.split('$MD5$')[1]
-    var pw = '$MD5$' + md5(salt + password)
-    var buf = Buffer.concat([rpcCode, sanetypes.string(resource), sanetypes.string(username), sanetypes.string(pw)])
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_AUTHORIZE)
+    resource = SaneString.bufferFor(resource)
+    username = SaneString.bufferFor(username)
+    password = SaneString.bufferFor('$MD5$' + md5(salt + password))
+    var buf = Buffer.concat([rpcCode, resource, username, password])
     return this.send(buf, new Parser(originalParser, true, false))
   }
   exit () {
-    var rpcCode = sanetypes.word(enums.rpc.SANE_NET_EXIT)
+    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_EXIT)
     return this.send(rpcCode, new Parser(new SaneWord(), false, false))
   }
 }
@@ -281,12 +298,11 @@ class SaneWord extends SaneBuffer {
     this.type = type
     this.buffer = new SaneBytes(4)
   }
-  static bufferFor (data) {
+  static bufferFor (data, valueType) {
     if (typeof data !== 'number') { throw new Error('data must be a number') }
+    valueType = valueType || enums.valueType.INT
     var buf = new Buffer(4)
-    if (data !== (data | 0)) { // float
-      data = data * (1 << 16)
-    }
+    if (valueType === enums.valueType.FIXED) { data = data * (1 << 16) }
     buf.writeUInt32BE(data)
     return buf
   }
