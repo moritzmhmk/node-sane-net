@@ -32,7 +32,7 @@ saneClient.connect(6566, '127.0.0.1')
   console.log('get option descriptors response', data)
   var handle = 0 // TODO use actual handle
   var option = 7
-  var action = 1
+  var action = 'SET_VALUE'
   var valueType = data[option].type
   var value = 120
   return saneClient.controlOption(handle, option, action, value, valueType)

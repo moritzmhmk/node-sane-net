@@ -53,17 +53,17 @@ class SaneSocket extends EventEmitter {
     })
   }
   init () {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_INIT)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_INIT', enums.rpc)
     var major = 1
     var minor = 0
     var build = 3
     var versionCode = SaneWord.bufferFor(major & 0xFF << 24 || minor & 0xFF << 16 || build & 0xFFFF)
     var name = SaneString.bufferFor('moritz')
     var buf = Buffer.concat([rpcCode, versionCode, name])
-    return this.send(buf, new Parser(new SaneWord(enums.valueType.INT), true, false))
+    return this.send(buf, new Parser(new SaneWord(), true, false))
   }
   getDevices () {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_GET_DEVICES)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_GET_DEVICES', enums.rpc)
     return this.send(rpcCode, new Parser(
       new SaneArray((index) => {
         return new SanePointer(new SaneStructure(new Map([
@@ -78,17 +78,17 @@ class SaneSocket extends EventEmitter {
     ))
   }
   open (deviceName) {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_OPEN)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_OPEN', enums.rpc)
     var buf = Buffer.concat([rpcCode, SaneString.bufferFor(deviceName)])
-    return this.send(buf, new Parser(new SaneWord(enums.valueType.INT), true, true))
+    return this.send(buf, new Parser(new SaneHandle(), true, true))
   }
   close () {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_CLOSE)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_CLOSE', enums.rpc)
     return this.send(rpcCode, new Parser())
   }
   getOptionDescriptors (handle) {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_GET_OPTION_DESCRIPTORS)
-    handle = SaneWord.bufferFor(handle)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_GET_OPTION_DESCRIPTORS', enums.rpc)
+    handle = SaneHandle.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(
       new SaneArray((index) => {
@@ -96,23 +96,23 @@ class SaneSocket extends EventEmitter {
           ['name', () => new SaneString()],
           ['title', () => new SaneString()],
           ['description', () => new SaneString()],
-          ['type', () => new SaneWord(enums.valueType.INT)],
-          ['units', () => new SaneWord(enums.valueType.INT)],
-          ['size', () => new SaneWord(enums.valueType.INT)],
-          ['cap', () => new SaneWord(enums.valueType.INT)],
-          ['constraint', (optionDescriptor) => new SaneUnion((type) => {
+          ['type', () => new SaneEnum(enums.valueType)],
+          ['units', () => new SaneEnum(enums.unit)],
+          ['size', () => new SaneWord()],
+          ['cap', () => new SaneEnum(enums.cap)],
+          ['constraint', (optionDescriptor) => new SaneUnion(enums.constraintType, (type) => {
             switch (type) {
-              case enums.constraintType.NONE:
+              case 'NONE':
                 return new SaneBytes(0)
-              case enums.constraintType.RANGE:
+              case 'RANGE':
                 return new SanePointer(new SaneStructure(new Map([
                   ['min', () => new SaneWord(optionDescriptor.type)],
                   ['max', () => new SaneWord(optionDescriptor.type)],
                   ['quantization', () => new SaneWord(optionDescriptor.type)]
                 ])))
-              case enums.constraintType.WORD_LIST:
+              case 'WORD_LIST':
                 return new SaneArray(index => new SaneWord(optionDescriptor.type))
-              case enums.constraintType.STRING_LIST:
+              case 'STRING_LIST':
                 return new SaneArray(index => new SaneString())
             }
           })]
@@ -123,39 +123,44 @@ class SaneSocket extends EventEmitter {
     ))
   }
   controlOption (handle, option, action, value, valueType) {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_CONTROL_OPTION)
-    handle = SaneWord.bufferFor(handle)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_CONTROL_OPTION', enums.rpc)
+    handle = SaneHandle.bufferFor(handle)
     option = SaneWord.bufferFor(option)
-    action = SaneWord.bufferFor(action)
+    action = SaneEnum.bufferFor(action, enums.action)
     switch (valueType) {
-      case enums.valueType.BOOL:
-      case enums.valueType.INT:
-      case enums.valueType.FIXED:
+      case 'BOOL':
+      case 'INT':
+      case 'FIXED':
         value = SaneArray.bufferFor([SaneWord.bufferFor(value, valueType)])
         break
-      case enums.valueType.STRING:
+      case 'STRING':
         value = SaneString.bufferFor(value)
         break
-      case enums.valueType.BUTTON:
-      case enums.valueType.GROUP:
+      case 'BUTTON':
+      case 'GROUP':
       default:
         value = new Buffer(0)
     }
-    valueType = SaneWord.bufferFor(valueType)
+    valueType = SaneEnum.bufferFor(valueType, enums.valueType)
     let valueSize = SaneWord.bufferFor(value.length - 4) // subtract the 4 bytes indicating the length in words
     var buf = Buffer.concat([rpcCode, handle, option, action, valueType, valueSize, value])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
-        ['info', () => new SaneWord(enums.valueType.INT)],
-        ['valueType', () => new SaneWord(enums.valueType.INT)],
-        ['valueSize', () => new SaneWord(enums.valueType.INT)],
+        ['info', () => new SaneEnum(enums.info)],
+        ['valueType', () => new SaneEnum(enums.valueType)],
+        ['valueSize', () => new SaneWord()],
         ['value', (_) => {
-          if (_.valueType === 0) { return new SaneArray(() => { return new SaneWord(enums.valueType.BOOL) }) }
-          if (_.valueType === 1) { return new SaneArray(() => { return new SaneWord(enums.valueType.INT) }) }
-          if (_.valueType === 2) { return new SaneArray(() => { return new SaneWord(enums.valueType.FIXED) }) }
-          if (_.valueType === 3) { return new SaneString() }
-          if (_.valueType === 4) { return new SaneArray(() => { return new SaneWord() }) }
-          if (_.valueType === 5) { return new SaneArray(() => { return new SaneWord() }) }
+          switch (_.valueType) {
+            case 'BOOL':
+            case 'INT':
+            case 'FIXED':
+              return new SaneArray(() => new SaneWord(_.valueType))
+            case 'STRING':
+              return new SaneString()
+            case 'BUTTON':
+            case 'GROUP':
+              return new SaneArray(() => new SaneWord())
+          }
         }]
       ])),
       true,
@@ -163,44 +168,44 @@ class SaneSocket extends EventEmitter {
     ))
   }
   getParameters (handle) {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_GET_PARAMETERS)
-    handle = SaneWord.bufferFor(handle)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_GET_PARAMETERS', enums.rpc)
+    handle = SaneHandle.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
-        ['format', () => new SaneWord(enums.valueType.INT)],
-        ['lastFrame', () => new SaneWord(enums.valueType.BOOL)],
-        ['bytesPerLine', () => new SaneWord(enums.valueType.INT)],
-        ['pixelsPerLine', () => new SaneWord(enums.valueType.INT)],
-        ['lines', () => new SaneWord(enums.valueType.INT)],
-        ['depth', () => new SaneWord(enums.valueType.INT)]
+        ['format', () => new SaneEnum(enums.frame)],
+        ['lastFrame', () => new SaneWord()],
+        ['bytesPerLine', () => new SaneWord()],
+        ['pixelsPerLine', () => new SaneWord()],
+        ['lines', () => new SaneWord()],
+        ['depth', () => new SaneWord()]
       ])),
       true,
       false
     ))
   }
   start (handle) {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_START)
-    handle = SaneWord.bufferFor(handle)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_START', enums.rpc)
+    handle = SaneHandle.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
-        ['port', () => new SaneWord(enums.valueType.INT)],
-        ['byteOrder', () => new SaneWord(enums.valueType.INT)]
+        ['port', () => new SaneWord()],
+        ['byteOrder', () => new SaneWord()]
       ])),
       true,
       true
     ))
   }
   cancel (handle) {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_CANCEL)
-    handle = SaneWord.bufferFor(handle)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_CANCEL', enums.rpc)
+    handle = SaneHandle.bufferFor(handle)
     var buf = Buffer.concat([rpcCode, handle])
     return this.send(buf, new Parser(new SaneWord(), false, false))
   }
   authorize (resource, username, password, originalParser) {
     var salt = resource.split('$MD5$')[1]
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_AUTHORIZE)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_AUTHORIZE', enums.rpc)
     resource = SaneString.bufferFor(resource)
     username = SaneString.bufferFor(username)
     password = SaneString.bufferFor('$MD5$' + md5(salt + password))
@@ -208,7 +213,7 @@ class SaneSocket extends EventEmitter {
     return this.send(buf, new Parser(originalParser, true, false))
   }
   exit () {
-    var rpcCode = SaneWord.bufferFor(enums.rpc.SANE_NET_EXIT)
+    var rpcCode = SaneEnum.bufferFor('SANE_NET_EXIT', enums.rpc)
     return this.send(rpcCode, new Parser(new SaneWord(), false, false))
   }
 }
@@ -295,17 +300,14 @@ class SaneWord extends SaneBuffer {
   }
   static bufferFor (data, valueType) {
     if (typeof data !== 'number') { throw new Error('data must be a number') }
-    valueType = valueType || enums.valueType.INT
     var buf = new Buffer(4)
-    if (valueType === enums.valueType.FIXED) { data = data * (1 << 16) }
+    if (valueType === 'FIXED') { data = data * (1 << 16) }
     buf.writeUInt32BE(data)
     return buf
   }
   get data () {
     let i = this.buffer.data.readInt32BE() // TODO signed or unsinged?
-    if (this.type === enums.valueType.BOOL) { return i }
-    if (this.type === enums.valueType.INT) { return i }
-    if (this.type === enums.valueType.FIXED) { return i / (1 << 16) }
+    if (this.type === 'FIXED') { return i / (1 << 16) }
     return i
   }
 }
@@ -327,6 +329,38 @@ class SaneChar extends SaneBuffer {
 }
 
 /**
+ * A handle is encoded like a word.
+ * @extends SaneWord
+ */
+class SaneHandle extends SaneWord {}
+
+/**
+ * Enumeration types are encoded like words.
+ * @param {Object} definition the enum definition
+ * @extends SaneBuffer
+ */
+class SaneEnum extends SaneBuffer {
+  constructor (definition) {
+    super()
+    this.definition = definition
+    this.buffer = new SaneWord()
+  }
+  /**
+   * @param {String} data the enum value
+   * @param {Object} definition the enum definition
+   */
+  static bufferFor (data, definition) {
+    return SaneWord.bufferFor(definition[data])
+  }
+  /**
+   * @return {String} representing the enum value according to the enum definition
+   */
+  get data () {
+    return this.definition[this.buffer.data]
+  }
+}
+
+/**
  * A SanePointer is encoded by a word that indicates whether the pointer is a NULL-pointer which is
  * then (in the case of a non-NULL pointer) followed by the value that the pointer points to.
  * The word is 0 in case of a non-NULL pointer (sic!).
@@ -337,7 +371,7 @@ class SaneChar extends SaneBuffer {
 class SanePointer extends SaneBuffer {
   constructor (pointerBuffer) {
     super()
-    this.isNullBuffer = new SaneWord(enums.valueType.BOOL)
+    this.isNullBuffer = new SaneWord()
     this.pointerBuffer = pointerBuffer
   }
   reset () {
@@ -412,7 +446,7 @@ class SaneStructure extends SaneBuffer {
 class SaneArray extends SaneBuffer {
   constructor (itemBufferCreator) {
     super()
-    this.lengthBuffer = new SaneWord(enums.valueType.INT)
+    this.lengthBuffer = new SaneWord()
     this.buffers = []
     this.itemBufferCreator = itemBufferCreator
   }
@@ -480,11 +514,11 @@ class SaneString extends SaneBuffer {
  * @param {function} unionBufferCreator should return a new SaneBuffer, called with the tag as argument.
  */
 class SaneUnion extends SaneBuffer {
-  constructor (unionBufferCreator) {
+  constructor (typeEnum, unionBufferCreator) {
     super()
     this.unionBufferCreator = unionBufferCreator
     this.buffer = new SaneStructure(new Map([
-      ['type', () => new SaneWord(enums.valueType.INT)],
+      ['type', () => new SaneEnum(typeEnum)],
       ['value', union => this.unionBufferCreator(union.type)]
     ]))
   }
@@ -526,9 +560,9 @@ class Parser extends EventEmitter {
    */
   constructor (buffer, hasStatus, hasResource) {
     super()
-    this.status = new SaneWord(enums.valueType.INT)
+    this.status = new SaneEnum(enums.status)
     // if there is no status response - set to "GOOD"
-    if (!hasStatus) { this.status.sliceFrom(SaneWord.bufferFor(enums.status.GOOD)) }
+    if (!hasStatus) { this.status.sliceFrom(SaneEnum.bufferFor('GOOD', enums.status)) }
     this.buffer = buffer || new SaneBytes(0)
     this.resource = hasResource ? new SaneString() : new SaneBytes(0)
   }
@@ -540,10 +574,9 @@ class Parser extends EventEmitter {
     data = this.resource.sliceFrom(data)
     if (this.complete) {
       let resource = this.resource.data
-      if (this.status.data !== enums.status.GOOD) {
-        let status = enums.status[this.status.data]
-        console.log('error', status)
-        this.emit('error', status)
+      if (this.status.data !== 'GOOD') {
+        console.log('error', this.status.data)
+        this.emit('error', this.status.data)
       } else if (resource.length) {
         console.log('authorization required:', resource)
         this.status.reset()
