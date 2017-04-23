@@ -220,7 +220,7 @@ class SaneSocket extends EventEmitter {
 
 module.exports.Socket = SaneSocket
 
-/** Abstract Buffer class */
+/** Abstract Buffer class - base for the implementation of [Sane Types]{@link http://www.sane-project.org/html/doc016.html} */
 class SaneBuffer {
   constructor () {
     if (new.target === SaneBuffer) {
@@ -253,7 +253,7 @@ class SaneBuffer {
   get data () { return this.buffer.data }
 
   /**
-   * slice bytes from buf to complete this {SaneBuffer}
+   * slice bytes from buf to complete this {@link SaneBuffer}
    * @param {Buffer} buf
    * @return {Buffer} remaining bytes
    */
@@ -325,6 +325,28 @@ class SaneChar extends SaneBuffer {
   }
   static bufferFor (data) {
     return new Buffer(data)
+  }
+}
+
+/**
+ * A string pointer is encoded as a {@link SaneArray} of {@link SaneChar}.
+ * The trailing NUL byte is considered part of the array.
+ * A NULL pointer is encoded as a zero-length array.
+ * @extends SaneBuffer
+ */
+class SaneString extends SaneBuffer {
+  constructor () {
+    super()
+    this.buffer = new SaneArray((i) => { return new SaneChar() })
+  }
+  static bufferFor (str) {
+    str = str.slice(-1) === '\0' ? str : str + '\0'
+    return SaneArray.bufferFor(str.split('').map((c) => SaneChar.bufferFor(c)))
+  }
+  get data () {
+    let str = this.buffer.data.join('')
+    str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
+    return str
   }
 }
 
@@ -401,42 +423,6 @@ class SanePointer extends SaneBuffer {
 }
 
 /**
- * A structure is encoded by simply encoding the structure members in the order in which they appear.
- * @extends SaneBuffer
- * @param {Map} structDefinition definition of the struct (String => SaneBuffer)
- */
-class SaneStructure extends SaneBuffer {
-  constructor (definitionMap) {
-    super()
-    this.definitionMap = definitionMap
-    this.bufferMap = new Map()
-  }
-  reset () {
-    this.bufferMap = new Map()
-  }
-  get complete () {
-    if (this.bufferMap.size !== this.definitionMap.size) { return false }
-    return !Array.from(this.bufferMap.values()).find((buffer) => { return !buffer || !buffer.complete })
-  }
-  get data () {
-    let data = {}
-    this.bufferMap.forEach((buffer, name) => { data[name] = buffer.data })
-    return data
-  }
-  sliceFrom (buf) {
-    for (let name of this.definitionMap.keys()) {
-      if (!this.bufferMap.has(name)) {
-        this.bufferMap.set(name, this.definitionMap.get(name)(this.data))
-      }
-      let buffer = this.bufferMap.get(name)
-      if (!buffer.complete) { buf = buffer.sliceFrom(buf) }
-      if (!buffer.complete) { break }
-    }
-    return buf
-  }
-}
-
-/**
  * An array is encoded by a word that indicates the length of the array
  * followed by the values of the elements in the array.
  * The length may be zero in which case no bytes are encoded for the element values.
@@ -486,24 +472,38 @@ class SaneArray extends SaneBuffer {
 }
 
 /**
- * A string pointer is encoded as a SaneArray of SaneChar.
- * The trailing NUL byte is considered part of the array.
- * A NULL pointer is encoded as a zero-length array.
+ * A structure is encoded by simply encoding the structure members in the order in which they appear.
  * @extends SaneBuffer
+ * @param {Map} structDefinition definition of the struct (String => {@link SaneBuffer})
  */
-class SaneString extends SaneBuffer {
-  constructor () {
+class SaneStructure extends SaneBuffer {
+  constructor (definitionMap) {
     super()
-    this.buffer = new SaneArray((i) => { return new SaneChar() })
+    this.definitionMap = definitionMap
+    this.bufferMap = new Map()
   }
-  static bufferFor (str) {
-    str = str.slice(-1) === '\0' ? str : str + '\0'
-    return SaneArray.bufferFor(str.split('').map((c) => SaneChar.bufferFor(c)))
+  reset () {
+    this.bufferMap = new Map()
+  }
+  get complete () {
+    if (this.bufferMap.size !== this.definitionMap.size) { return false }
+    return !Array.from(this.bufferMap.values()).find((buffer) => { return !buffer || !buffer.complete })
   }
   get data () {
-    let str = this.buffer.data.join('')
-    str = str.slice(-1) === '\0' ? str.slice(0, -1) : str
-    return str
+    let data = {}
+    this.bufferMap.forEach((buffer, name) => { data[name] = buffer.data })
+    return data
+  }
+  sliceFrom (buf) {
+    for (let name of this.definitionMap.keys()) {
+      if (!this.bufferMap.has(name)) {
+        this.bufferMap.set(name, this.definitionMap.get(name)(this.data))
+      }
+      let buffer = this.bufferMap.get(name)
+      if (!buffer.complete) { buf = buffer.sliceFrom(buf) }
+      if (!buffer.complete) { break }
+    }
+    return buf
   }
 }
 
@@ -511,7 +511,7 @@ class SaneString extends SaneBuffer {
  * A union is encoded by a tag value that indicates which of the union members is the active one
  * and the union itself (encoded simply by encoding the value of the currently active member).
  * @extends SaneBuffer
- * @param {function} unionBufferCreator should return a new SaneBuffer, called with the tag as argument.
+ * @param {function} unionBufferCreator should return a new {@link SaneBuffer}, called with the tag as argument.
  */
 class SaneUnion extends SaneBuffer {
   constructor (typeEnum, unionBufferCreator) {
@@ -525,28 +525,7 @@ class SaneUnion extends SaneBuffer {
 }
 
 /**
- * Parser authorize event.
- *
- * @event Parser#authorize
- * @property {String} resource - the resource to authorize
- */
-
-/**
- * Parser complete event.
- *
- * @event Parser#complete
- * @property data - the parsed data
- */
-
-/**
- * Parser error event.
- *
- * @event Parser#error
- * @property error - sane status describing the error
- */
-
-/**
- * A Parser differs from a {SaneBuffer} by being an {EventEmitter} and having no bufferFor and reset functions.
+ * A Parser differs from a {@link SaneBuffer} by being an {@link EventEmitter} and having no bufferFor and reset functions.
  * @emits Parser#authorize
  * @emits Parser#complete
  * @emits Parser#error
@@ -590,3 +569,24 @@ class Parser extends EventEmitter {
     return data
   }
 }
+
+/**
+ * Parser authorize event.
+ *
+ * @event Parser#authorize
+ * @property {String} resource - the resource to authorize
+ */
+
+/**
+ * Parser complete event.
+ *
+ * @event Parser#complete
+ * @property data - the parsed data
+ */
+
+/**
+ * Parser error event.
+ *
+ * @event Parser#error
+ * @property error - sane status describing the error
+ */
