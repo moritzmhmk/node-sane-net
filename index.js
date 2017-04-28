@@ -55,7 +55,7 @@ saneClient.connect(6566, '127.0.0.1')
   console.log('start response', data)
   var png = fs.createWriteStream(path.join(__dirname, '/scan.png'))
   console.log(width, height)
-  var saneTransform = new SaneImageTransform()
+  var saneTransform = new sane.ImageTransform()
   var pngTransform = new PNGTransform(width, height, depth, format)
 
   var dataSocket = new net.Socket()
@@ -66,33 +66,6 @@ saneClient.connect(6566, '127.0.0.1')
 .catch((reason) => { console.log('promise rejected', reason) })
 
 const Transform = require('stream').Transform
-
-class SaneImageTransform extends Transform {
-  constructor () {
-    super()
-    this.bytesLeft = 0
-  }
-  _transform (data, encoding, done) {
-    console.log('-> transform')
-    if (this.rest) {
-      data = Buffer.concat([this.rest, data])
-      delete this.rest
-    }
-    while (data.length) {
-      if (this.bytesLeft === 0) {
-        if (data.length < 4) { break } // cant read 4 bytes (int32)
-        this.bytesLeft = data.readInt32BE() // read the chunk length marker
-        if (this.bytesLeft === -1) { break } // end of SANE pixel stream
-        data = data.slice(4) // remove the length marker
-      }
-      let bytes = data.slice(0, this.bytesLeft)
-      data = data.slice(bytes.length) // remove the read bytes
-      this.bytesLeft -= bytes.length // substract the number of read bytes
-      this.push(bytes) // push the read bytes out
-    }
-    return done()
-  }
-}
 
 class PNGTransform extends Transform {
   constructor (width, height, depth, format) {

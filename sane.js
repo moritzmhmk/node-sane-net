@@ -1,5 +1,6 @@
 const net = require('net')
 const EventEmitter = require('events')
+const Transform = require('stream').Transform
 
 const md5 = require('md5')
 
@@ -590,3 +591,37 @@ class Parser extends EventEmitter {
  * @event Parser#error
  * @property error - sane status describing the error
  */
+
+/**
+ * Transforms the image stream send by SANE into a pure pixel stream.
+ * (The SANE stream contains length markers splitting the stream in chunks)
+ * @extends Transform
+ */
+class ImageTransform extends Transform {
+  constructor () {
+    super()
+    this.bytesLeft = 0
+  }
+  _transform (data, encoding, done) {
+    console.log('-> transform')
+    if (this.rest) {
+      data = Buffer.concat([this.rest, data])
+      delete this.rest
+    }
+    while (data.length) {
+      if (this.bytesLeft === 0) {
+        if (data.length < 4) { break } // cant read 4 bytes (int32)
+        this.bytesLeft = data.readInt32BE() // read the chunk length marker
+        if (this.bytesLeft === -1) { break } // end of SANE pixel stream
+        data = data.slice(4) // remove the length marker
+      }
+      let bytes = data.slice(0, this.bytesLeft)
+      data = data.slice(bytes.length) // remove the read bytes
+      this.bytesLeft -= bytes.length // substract the number of read bytes
+      this.push(bytes) // push the read bytes out
+    }
+    return done()
+  }
+}
+
+module.exports.ImageTransform = ImageTransform
