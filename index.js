@@ -7,7 +7,7 @@ var zlib = require('zlib')
 
 const sane = require('./sane')
 
-let width, height
+let width, height, depth, format
 
 let saneClient = new sane.Socket()
 saneClient.on('authorize', (backend, callback) => {
@@ -46,6 +46,8 @@ saneClient.connect(6566, '127.0.0.1')
   console.log('get parameters response', data)
   width = data.pixelsPerLine
   height = data.lines
+  depth = data.depth
+  format = data.format
   var handle = 0 // TODO use actual handle
   return saneClient.start(handle)
 })
@@ -53,8 +55,8 @@ saneClient.connect(6566, '127.0.0.1')
   console.log('start response', data)
   var png = fs.createWriteStream(path.join(__dirname, '/scan.png'))
   console.log(width, height)
-  var pngTransform = new PNGTransform(width, height)
   var saneTransform = new SaneImageTransform()
+  var pngTransform = new PNGTransform(width, height, depth, format)
 
   var dataSocket = new net.Socket()
   dataSocket.pipe(saneTransform).pipe(pngTransform).pipe(png)
@@ -93,12 +95,17 @@ class SaneImageTransform extends Transform {
 }
 
 class PNGTransform extends Transform {
-  constructor (width, height) {
+  constructor (width, height, depth, format) {
     super()
     this.width = width
     this.height = height
+    this.depth = depth
+    this.format = 0
+    if (format === 'RGB') {
+      this.format = 2
+    }
     this.currentLineConsumed = 0
-    this.currentLineLength = width * 3 // TODO
+    this.currentLineLength = width * (depth / 8) * (format === 'RGB' ? 3 : 1)
     this.firstLine = false
     this.headerWritten = false
     this._zlib = zlib.createDeflate()
@@ -145,8 +152,8 @@ class PNGTransform extends Transform {
       var chunk = new Buffer(13)
       chunk.writeUInt32BE(this.width, 0)
       chunk.writeUInt32BE(this.height, 4)
-      chunk[8] = 8 // bits
-      chunk[9] = 2 // color type (2 = RGB)
+      chunk[8] = this.depth // bits
+      chunk[9] = this.format // color type (0 = Gray, 2 = RGB)
       chunk[10] = 0 // compression
       chunk[11] = 0 // filter
       chunk[12] = 0 // interlace
