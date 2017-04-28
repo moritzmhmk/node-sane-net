@@ -53,8 +53,8 @@ saneClient.connect(6566, '127.0.0.1')
   console.log('start response', data)
   var png = fs.createWriteStream(path.join(__dirname, '/scan.png'))
   console.log(width, height)
-  var saneTransform = new SaneImageTransform(width, height)
   var pngTransform = new PNGTransform(width, height)
+  var saneTransform = new SaneImageTransform()
 
   var dataSocket = new net.Socket()
   dataSocket.pipe(saneTransform).pipe(pngTransform).pipe(png)
@@ -66,31 +66,28 @@ saneClient.connect(6566, '127.0.0.1')
 const Transform = require('stream').Transform
 
 class SaneImageTransform extends Transform {
-  constructor (width, height) {
+  constructor () {
     super()
-    this.currentChunkConsumed = 0
-    this.currentChunkLength = 0
-  }
-  readChunk (data) {
-    // console.log('->readChunk')
-    if (data.length === 0) { return data }
-    if (this.currentChunkLength === this.currentChunkConsumed) {
-      if (data.length < 4) { console.warn('cant read int 32', data.length) }
-      this.currentChunkLength = data.readInt32BE()
-      this.currentChunkConsumed = 0
-      return this.readChunk(data.slice(4))
-    }
-    if (this.currentChunkLength === -1) {
-      console.log('end of SANE pixel stream')
-      return new Buffer(0)
-    }
-    let chunk = data.slice(0, this.currentChunkLength - this.currentChunkConsumed)
-    this.currentChunkConsumed += chunk.length
-    return Buffer.concat([chunk, this.readChunk(data.slice(chunk.length))])
+    this.bytesLeft = 0
   }
   _transform (data, encoding, done) {
-    console.log('->transform')
-    this.push(this.readChunk(data))
+    console.log('-> transform')
+    if (this.rest) {
+      data = Buffer.concat([this.rest, data])
+      delete this.rest
+    }
+    while (data.length) {
+      if (this.bytesLeft === 0) {
+        if (data.length < 4) { break } // cant read 4 bytes (int32)
+        this.bytesLeft = data.readInt32BE() // read the chunk length marker
+        if (this.bytesLeft === -1) { break } // end of SANE pixel stream
+        data = data.slice(4) // remove the length marker
+      }
+      let bytes = data.slice(0, this.bytesLeft)
+      data = data.slice(bytes.length) // remove the read bytes
+      this.bytesLeft -= bytes.length // substract the number of read bytes
+      this.push(bytes) // push the read bytes out
+    }
     return done()
   }
 }
