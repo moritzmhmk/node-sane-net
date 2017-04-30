@@ -140,7 +140,7 @@ class SaneSocket extends EventEmitter {
       case 'BUTTON':
       case 'GROUP':
       default:
-        value = new Buffer(0)
+        value = SaneArray.bufferFor([new Buffer(1)])
     }
     valueType = SaneEnum.bufferFor(valueType, enums.valueType)
     let valueSize = SaneWord.bufferFor(value.length - 4) // subtract the 4 bytes indicating the length in words
