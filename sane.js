@@ -100,7 +100,7 @@ class SaneSocket extends EventEmitter {
           ['type', () => new SaneEnum(enums.valueType)],
           ['units', () => new SaneEnum(enums.unit)],
           ['size', () => new SaneWord()],
-          ['cap', () => new SaneEnum(enums.cap)],
+          ['cap', () => new SaneEnumFlags(enums.cap)],
           ['constraint', (optionDescriptor) => new SaneUnion(enums.constraintType, (type) => {
             switch (type) {
               case 'NONE':
@@ -380,6 +380,35 @@ class SaneEnum extends SaneBuffer {
    */
   get data () {
     return this.definition[this.buffer.data]
+  }
+}
+
+/**
+ * Enumeration representing flags rather than single values
+ * @param {Object} definition the enum definition
+ * @extends SaneEnum
+ */
+class SaneEnumFlags extends SaneEnum {
+  /**
+   * @param {String} data the set flags
+   * @param {Object} definition the enum definition
+   */
+  static bufferFor (data, definition) {
+    let word = 0
+    data.forEach((flag) => { word |= this.definition[flag] })
+    return SaneWord.bufferFor(word)
+  }
+  /**
+   * @return {Array} list of set flags
+   */
+  get data () {
+    let flags = []
+    let word = this.buffer.data
+    for (let i = 0; i < 32; i++) {
+      let set = word & 1 << i
+      set && this.definition[set] && flags.push(this.definition[set])
+    }
+    return flags
   }
 }
 
