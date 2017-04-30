@@ -455,7 +455,9 @@ class SaneArray extends SaneBuffer {
     return Buffer.concat(data)
   }
   get data () {
-    return this.buffers.map((buffer) => { return buffer ? buffer.data : undefined })
+    let array = this.buffers.map((buffer) => { return buffer ? buffer.data : undefined })
+    if (array.length && array[array.length - 1] === null) { array.pop() } // null terminated arrays
+    return array
   }
   sliceFrom (buf) {
     if (!this.lengthBuffer.complete) {
