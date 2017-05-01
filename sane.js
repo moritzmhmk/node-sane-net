@@ -123,6 +123,23 @@ class SaneSocket extends EventEmitter {
       false
     ))
   }
+  getOptionDescriptorsGrouped (handle) {
+    return this.getOptionDescriptors(handle).then((options) => {
+      let r = []
+      let c = r
+      options.forEach((option, id) => {
+        option.id = id
+        if (option.type === 'GROUP') {
+          option.children = []
+          c = option.children
+          r.push(option)
+        } else {
+          c.push(option)
+        }
+      })
+      return r
+    })
+  }
   controlOption (handle, option, action, value, valueType) {
     var rpcCode = SaneEnum.bufferFor('SANE_NET_CONTROL_OPTION', enums.rpc)
     handle = SaneHandle.bufferFor(handle)
@@ -167,6 +184,19 @@ class SaneSocket extends EventEmitter {
       true,
       true
     ))
+  }
+  getOption (handle, option) {
+    return this.getOptionDescriptors(handle).then((options) => {
+      let value = 0
+      let valueType = options[option].type
+      if (valueType === 'STRING') { value = Array(options[option].size - 1).join(' ') }
+      return this.controlOption(handle, option, 'GET_VALUE', value, valueType)
+    })
+  }
+  setOption (handle, option, value) {
+    return this.getOptionDescriptors(handle).then(
+      (options) => this.controlOption(handle, option, 'SET_VALUE', value, options[option].type)
+    )
   }
   getParameters (handle) {
     var rpcCode = SaneEnum.bufferFor('SANE_NET_GET_PARAMETERS', enums.rpc)
