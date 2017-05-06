@@ -2,7 +2,7 @@ const net = require('net')
 const path = require('path')
 const fs = require('fs')
 
-const sane = require('./sane')
+const sane = require('../sane')
 const PNGTransform = require('./png-transform')
 
 let width, height, depth, format

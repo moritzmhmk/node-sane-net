@@ -22,7 +22,9 @@
   },
   "homepage": "https://github.com/moritzmhmk/node-sane-net#readme",
   "dependencies": {
-    "buffer-crc32": "^0.2.13",
     "md5": "^2.2.1"
+  },
+  "devDependencies": {
+    "buffer-crc32": "^0.2.13"
   }
 }
