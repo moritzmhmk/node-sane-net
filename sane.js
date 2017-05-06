@@ -330,7 +330,7 @@ class SaneWord extends SaneBuffer {
     this.buffer = new SaneBytes(4)
   }
   static bufferFor (data, valueType) {
-    if (typeof data !== 'number') { throw new Error('data must be a number') }
+    // if (typeof data !== 'number') { throw new Error('data must be a number') } TODO
     var buf = new Buffer(4)
     if (valueType === 'FIXED') { data = data * (1 << 16) }
     buf.writeUInt32BE(data)
