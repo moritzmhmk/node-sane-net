@@ -515,7 +515,10 @@ class SaneArray extends SaneBuffer {
   }
   get data () {
     let array = this.buffers.map((buffer) => { return buffer ? buffer.data : undefined })
-    if (array.length && array[array.length - 1] === null) { array.pop() } // null terminated arrays
+    // null terminated arrays
+    if (array.length && (array[array.length - 1] === null || array[array.length - 1] === '')) {
+      array.pop()
+    }
     return array
   }
   sliceFrom (buf) {
