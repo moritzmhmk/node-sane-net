@@ -9,7 +9,7 @@ const enums = require('./enums')
 class SaneSocket extends EventEmitter {
   constructor () {
     super()
-    this.responseParsers = []
+    this.queue = []
     this.socket = new net.Socket()
     this.socket.on('data', (data) => {
       console.log('Received:', data)
@@ -20,9 +20,9 @@ class SaneSocket extends EventEmitter {
     })
   }
   _parse (data) { // TODO avoid infinte loop...
-    data = this.responseParsers[0].sliceFrom(data)
+    data = this.queue[0].responseParser.sliceFrom(data)
     if (data.length) {
-      if (this.responseParsers[0]) {
+      if (this.queue[0]) {
         this._parse(data)
       } else {
         console.warn('data not parsed:', data)
@@ -36,21 +36,36 @@ class SaneSocket extends EventEmitter {
       this.socket.connect(port, ip)
     })
   }
+  _shiftQueue () {
+    this.queue.shift()
+    this.queue[0] && this.queue[0].msgSender()
+  }
+  _pushQueue (msg, responseParser) {
+    this.queue.push({
+      responseParser: responseParser,
+      msgSender: () => {
+        console.log('send', msg)
+        this.socket.write(msg)
+      }
+    })
+    if (this.queue.length === 1) {
+      this.queue[0].msgSender()
+    }
+  }
   send (msg, responseParser) {
-    console.log('send', msg)
     return new Promise((resolve, reject) => {
-      this.responseParsers.push(responseParser)
-      responseParser.once('complete', (data) => this.responseParsers.shift())
+      console.log('queued', msg)
+      responseParser.once('complete', (data) => this._shiftQueue())
       responseParser.once('complete', resolve)
       responseParser.on('authorize', (resource) => {
-        this.responseParsers.shift()
+        this._shiftQueue()
         let backend = resource.split('$MD5$')[0]
         this.emit('authorize', backend, (username, password) => {
           this.authorize(resource, username, password, responseParser)
         })
       })
       responseParser.once('error', err => reject(err))
-      this.socket.write(msg)
+      this._pushQueue(msg, responseParser)
     })
   }
   init () {
