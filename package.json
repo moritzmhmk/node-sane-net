@@ -1,6 +1,6 @@
 {
   "name": "sane-net",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "pure JavaScript client for the SANE network protocol (i.e. shared scanners)",
   "main": "index.js",
   "scripts": {
