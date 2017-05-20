@@ -172,7 +172,8 @@ class SaneSocket extends EventEmitter {
             case 'BOOL':
             case 'INT':
             case 'FIXED':
-              return new SaneArray(() => new SaneWord(_.valueType))
+              let CustomArray = class extends SaneArray {get data () { return this.buffers[0] && this.buffers[0].data }}
+              return new CustomArray(() => new SaneWord(_.valueType))
             case 'STRING':
               return new SaneString()
             case 'BUTTON':
