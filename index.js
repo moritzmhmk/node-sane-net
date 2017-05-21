@@ -179,7 +179,7 @@ class SaneSocket extends EventEmitter {
     var buf = Buffer.concat([rpcCode, handle, option, action, valueType, valueSize, value])
     return this.send(buf, new Parser(
       new SaneStructure(new Map([
-        ['info', () => new SaneEnum(enums.info)],
+        ['info', () => new SaneEnumFlags(enums.info)],
         ['valueType', () => new SaneEnum(enums.valueType)],
         ['valueSize', () => new SaneWord()],
         ['value', (_) => {
